@@ -1,16 +1,15 @@
 """Module defining the abstract interface for differentiable, parameterized
 controllers in PyTorch."""
 
-from abc import abstractmethod
+from abc import ABCMeta, abstractmethod
 from typing import Any, Callable, Union
 
 import gymnasium as gym
 import numpy as np
-import torch
-import torch.nn as nn
+from torch import nn, Tensor
 
 
-class ParameterizedController(nn.Module):
+class ParameterizedController(nn.Module, metaclass=ABCMeta):
     """Abstract base class for differentiable parameterized controllers.
 
     Attributes:
@@ -24,7 +23,7 @@ class ParameterizedController(nn.Module):
     collate_fn_map: dict[Union[type, tuple[type, ...]], Callable] | None = None
 
     @abstractmethod
-    def forward(self, obs, param, ctx=None) -> tuple[Any, torch.Tensor]:
+    def forward(self, obs, param, ctx=None) -> tuple[Any, Tensor]:
         """Computes action from observation, parameters and internal context.
 
         Args:
