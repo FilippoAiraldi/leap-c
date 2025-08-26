@@ -16,19 +16,18 @@ from leap_c.ocp.acados.torch import AcadosDiffMpcCtx, AcadosDiffMpcTorch
 
 @dataclass(kw_only=True)
 class CartPolePlannerConfig:
-    """Configuration for the CartPole planner.
+    """Configuration for the `CartPole` planner.
 
     Attributes:
         N_horizon: The number of steps in the MPC horizon.
-            The MPC will have N+1 nodes (the nodes 0...N-1 and the terminal
-            node N).
-        T_horizon: The simulation time between two MPC nodes will equal
-            T_horizon/N_horizon [s] simulation time.
-        Fmax: Bounds of the box constraints on the maximum force that can be
-            applied to the cart [N] (hard constraint)
-        x_threshold: Bounds of the box constraints of the maximum absolute position
-            of the cart [m] (soft/slacked constraint)
-        cost_type: The type of cost to use, either "EXTERNAL" or "NONLINEAR_LS".
+            The MPC will have `N+1` nodes (the nodes `0...N-1` and the terminal node `N`).
+        T_horizon: The simulation time between two MPC nodes will equal `T_horizon / N_horizon` [s]
+            simulation time.
+        Fmax: Bounds of the box constraints on the maximum force that can be applied to the cart
+            [N] (hard constraint).
+        x_threshold: Bounds of the box constraints of the maximum absolute position of the cart [m]
+            (soft/slacked constraint)
+        cost_type: The type of cost to use, either `"EXTERNAL"` or `"NONLINEAR_LS"`.
         param_interface: Determines the exposed parameter interface of the planner.
         dtype: Type the planner output tensors will automatically be cast to.
     """
@@ -47,15 +46,14 @@ class CartPolePlannerConfig:
 class CartPolePlanner(AcadosPlanner[AcadosDiffMpcCtx]):
     """Acados-based planner for `CartPole`, aka inverted pendulum.
 
-    The state and action correspond to the observation and action of the CartPole environment.
+    The state and action correspond to the observation and action of the `CartPole` environment.
     The cost function takes the form of a weighted least-squares cost on the full state and action,
-    and the dynamics correspond to the simulated ODE of the standard CartPole environment
-    (using RK4). The inequality constraints are box constraints on the action and
-    on the cart position.
+    and the dynamics correspond to the simulated ODE of the standard `CartPole` environment (using
+    RK4). The inequality constraints are box constraints on the action and on the cart position.
 
     Attributes:
-        cfg: A configuration object containing high-level settings for the MPC problem,
-            such as horizon length.
+        cfg: A configuration object containing high-level settings for the MPC problem, such as
+            horizon length.
     """
 
     cfg: CartPolePlannerConfig
@@ -65,7 +63,7 @@ class CartPolePlanner(AcadosPlanner[AcadosDiffMpcCtx]):
         cfg: CartPolePlannerConfig | None = None,
         params: list[AcadosParameter] | None = None,
         export_directory: Path | None = None,
-    ):
+    ) -> None:
         """Initializes the CartPoleController.
 
         Args:
@@ -79,16 +77,10 @@ class CartPolePlanner(AcadosPlanner[AcadosDiffMpcCtx]):
                 `acados` solver code will be exported.
         """
         self.cfg = CartPolePlannerConfig() if cfg is None else cfg
-        params = (
-            create_cartpole_params(
-                param_interface=self.cfg.param_interface,
-                N_horizon=self.cfg.N_horizon,
-            )
-            if params is None
-            else params
-        )
+        if params is None:
+            params = create_cartpole_params(self.cfg.param_interface, self.cfg.N_horizon)
 
-        param_manager = AcadosParameterManager(parameters=params, N_horizon=self.cfg.N_horizon)
+        param_manager = AcadosParameterManager(params, self.cfg.N_horizon)
 
         ocp = export_parametric_ocp(
             param_manager=param_manager,
@@ -101,4 +93,4 @@ class CartPolePlanner(AcadosPlanner[AcadosDiffMpcCtx]):
         )
 
         diff_mpc = AcadosDiffMpcTorch(ocp, export_directory=export_directory, dtype=self.cfg.dtype)
-        super().__init__(param_manager=param_manager, diff_mpc=diff_mpc)
+        super().__init__(param_manager, diff_mpc)

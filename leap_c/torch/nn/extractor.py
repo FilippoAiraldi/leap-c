@@ -8,9 +8,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Literal
 
-import gymnasium as gym
 import torch
 import torch.nn as nn
+from gymnasium import Space, spaces
 
 from leap_c.torch.nn.scale import min_max_scaling
 
@@ -20,7 +20,7 @@ ExtractorName = Literal["identity", "scaling", "hvac"]
 class Extractor(nn.Module, ABC):
     """An abstract class for feature extraction from observations."""
 
-    def __init__(self, observation_space: gym.Space) -> None:
+    def __init__(self, observation_space: Space) -> None:
         """Initializes the extractor.
 
         Args:
@@ -36,13 +36,13 @@ class Extractor(nn.Module, ABC):
 
 
 class ScalingExtractor(Extractor):
-    """An extractor that returns the input normalized to the range [0, 1], using min-max scaling."""
+    """Extractor that returns the input normalized to the range `[0, 1]`, using min-max scaling."""
 
-    def __init__(self, observation_space: gym.spaces.Box) -> None:
+    def __init__(self, observation_space: spaces.Box) -> None:
         """Initializes the extractor.
 
         Args:
-            observation_space: The observation space of the environment. Only works for Box spaces.
+            observation_space: The observation space of the environment. Only works with `Box`.
         """
         super().__init__(observation_space)
 
@@ -50,7 +50,7 @@ class ScalingExtractor(Extractor):
             raise ValueError("ScalingExtractor only supports 1D observations.")
 
     def forward(self, x):
-        """Returns the input normalized to the range [0, 1], using min-max scaling.
+        """Returns the input normalized to the range `[0, 1]`, using min-max scaling.
 
         Args:
             x: The input tensor.
@@ -69,7 +69,7 @@ class ScalingExtractor(Extractor):
 class IdentityExtractor(Extractor):
     """An extractor that returns the input as is."""
 
-    def __init__(self, observation_space: gym.Space) -> None:
+    def __init__(self, observation_space: Space) -> None:
         """Initializes the extractor.
 
         Args:
@@ -128,9 +128,7 @@ class HvacExtractor(Extractor):
     """
 
     def __init__(
-        self,
-        observation_space: gym.spaces.Box,
-        cfg: HvacExtractorConfig | None = None,
+        self, observation_space: spaces.Box, cfg: HvacExtractorConfig | None = None
     ) -> None:
         """Initializes the HVAC extractor.
 
@@ -245,8 +243,18 @@ EXTRACTOR_REGISTRY = {
 }
 
 
-def get_extractor_cls(name: ExtractorName):
-    try:
-        return EXTRACTOR_REGISTRY[name]
-    except KeyError:
-        raise ValueError(f"Unknown extractor type: {name}")
+def get_extractor_cls(name: ExtractorName) -> type[Extractor]:
+    """Get the extract class corresponding to the given name.
+
+    Args:
+        name ({"identity", "scaling", "hvac"}): The name of the extractor.
+
+    Returns:
+        type[Extractor]: The class of the requested extractor.
+
+    Raises:
+        ValueError: If the name is not recognized.
+    """
+    if name not in EXTRACTOR_REGISTRY:
+        raise ValueError(f"Unknown extractor type: `{name}`")
+    return EXTRACTOR_REGISTRY[name]

@@ -1,4 +1,4 @@
-"""Utilities for creating an AcadosOcpBatchSolver from an AcadosOcp object."""
+"""Utilities for creating an `AcadosOcpBatchSolver` from an `AcadosOcp` object."""
 
 from copy import deepcopy
 from pathlib import Path
@@ -16,14 +16,14 @@ def create_batch_solver(
     n_batch_max: int = 256,
     num_threads: int = 4,
 ) -> AcadosOcpBatchSolver:
-    """Create an AcadosOcpBatchSolver from an AcadosOcp object.
+    """Create an `AcadosOcpBatchSolver` from an `AcadosOcp` object.
 
     Args:
         ocp: Acados optimal control problem formulation.
-        export_directory: Directory to export the generated code. If None, a
-            temporary directory is created and the directory is cleaned afterwards.
-        discount_factor: Discount factor. If None, acados default cost
-            scaling is used, i.e. dt for intermediate stages, 1 for terminal stage.
+        export_directory: Directory to export generated code. If `None`, a unique temporary
+            directory is created.
+        discount_factor: Discount factor for the solver. If not provided, acados default weighting
+            is used (i.e., `1/N_horizon` for intermediate stages, `1` for terminal stage).
         n_batch_max: Maximum batch size.
         num_threads: Number of threads used in the batch solver.
     """
@@ -86,21 +86,22 @@ def create_forward_backward_batch_solvers(
 ) -> tuple[AcadosOcpBatchSolver, AcadosOcpBatchSolver]:
     """Create a batch solver for solving the MPC problems (forward solver).
 
-    If this solver is suitable for computing sensitivities, it will also be returned as backward
-    solver (the solver for computing sensitivities). Otherwise,
-    a second batch solver will be created, which is suitable for computing sensitivities.
-
     Args:
         ocp: Acados optimal control problem formulation for the forward solver.
         sensitivity_ocp: Acados optimal control problem formulation for the backward solver.
-            If None, this will be derived from the given `ocp`.
-        export_directory: Directory to export generated code. If none,
-            a unique temporary directory is created.
-        discount_factor: Discount factor for the solver. If not provided,
-            acados default weighting is used
-            (i.e., 1/N_horizon for intermediate stages, 1 for terminal stage).
+            If `None`, this will be derived from the given `ocp`.
+        export_directory: Directory to export generated code. If `None`, a unique temporary
+            directory is created.
+        discount_factor: Discount factor for the solver. If not provided, acados default weighting
+            is used (i.e., `1/N_horizon` for intermediate stages, `1` for terminal stage).
         n_batch_max: Maximum batch size.
         num_threads: Number of threads used in the batch solver.
+
+    Returns:
+        A tuple of `AcadosOcpBatchSolver`, one for foward and the other for backward computations.
+        If the forward solver is suitable for computing sensitivities, it will also be returned as
+        backward solver (the solver for computing sensitivities). Otherwise, a second batch solver
+        will be created, which is suitable for computing sensitivities.
     """
     # check if we can use the forward solver for the backward pass.
     need_backward_solver = _check_need_sensitivity_solver(ocp)

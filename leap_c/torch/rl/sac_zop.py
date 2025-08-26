@@ -27,10 +27,10 @@ from leap_c.utils.gym import seed_env, wrap_env
 
 @dataclass(kw_only=True)
 class SacZopTrainerConfig(SacTrainerConfig):
-    """Specific settings for the Zop trainer.
+    """Specific settings for the `SacZopTrainer`.
 
     Attributes:
-        actor: Configuration for the HierachicalMPCActor.
+        actor: Configuration for the `HierachicalMPCActor`.
     """
 
     actor: HierachicalMPCActorConfig = field(
@@ -108,9 +108,7 @@ class SacZopTrainer(Trainer[SacZopTrainerConfig, CtxType], Generic[CtxType]):
         if extractor_cls is not None:
             cfg.actor.extractor_name = extractor_cls
 
-        # Get extractor class for critic
         critic_extractor_cls = get_extractor_cls(cfg.actor.extractor_name)
-
         self.q = SacCritic(
             critic_extractor_cls, param_space, observation_space, cfg.critic_mlp, cfg.num_critics
         )
@@ -205,7 +203,7 @@ class SacZopTrainer(Trainer[SacZopTrainerConfig, CtxType], Generic[CtxType]):
                     target = r[:, None] + self.cfg.gamma * (1 - te[:, None]) * q_target
 
                 q = torch.cat(self.q(o, a), dim=1)
-                q_loss = torch.mean((q - target).pow(2))
+                q_loss = torch.mean((q - target).square())
 
                 self.q_optim.zero_grad()
                 q_loss.backward()

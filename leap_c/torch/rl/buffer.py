@@ -28,9 +28,9 @@ class ReplayBuffer(torch.nn.Module):
     Attributes:
         buffer: A deque that stores the transitions.
         device: The device to which all sampled tensors will be cast.
-        collate_fn_map: The collate function map that informs the buffer how to form batches.
-            For more information, please refer to the official pytorch documentation, e.g.,
-            https://docs.pytorch.org/docs/stable/data.html#torch.utils.data.default_collate .
+        collate_fn_map: The collate function map that informs the buffer how to form batches. For
+            more information, please refer to the official pytorch documentation, e.g.,
+            https://docs.pytorch.org/docs/stable/data.html#torch.utils.data.default_collate.
         tensor_dtype: The data type to which the tensors will be cast.
     """
 
@@ -61,10 +61,9 @@ class ReplayBuffer(torch.nn.Module):
         self.device = torch.device(device)
         self.tensor_dtype = tensor_dtype
 
-        if collate_fn_map is None:
-            self.collate_fn_map = default_collate_fn_map
-        else:
-            self.collate_fn_map = {**default_collate_fn_map, **collate_fn_map}
+        self.collate_fn_map = default_collate_fn_map.copy()
+        if collate_fn_map is not None:
+            self.collate_fn_map |= collate_fn_map
 
     def put(self, data: Any) -> None:
         """Put the data into the replay buffer. If the buffer is full, the oldest data is discarded.
