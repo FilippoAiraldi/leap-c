@@ -1,10 +1,10 @@
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-import gymnasium as gym
 import matplotlib.pyplot as plt
 import numpy as np
-from gymnasium import spaces
+from gymnasium import Env
+from gymnasium.spaces import Box
 
 from leap_c.examples.chain.dynamics import (
     create_discrete_casadi_dynamics,
@@ -17,7 +17,7 @@ from leap_c.examples.utils.matplotlib_env import MatplotlibRenderEnv
 
 @dataclass
 class ChainEnvConfig:
-    """Configuration for the Chain environment."""
+    """Configuration for the `ChainEnv` environment."""
 
     n_mass: int = 5  # number of masses in the chain
     dt: float = 0.05  # simulation time step [s]
@@ -44,28 +44,25 @@ class ChainEnvConfig:
             self.w = [0.0, 0.0, 0.0] * (self.n_mass - 2)
 
 
-class ChainEnv(MatplotlibRenderEnv, gym.Env):
+class ChainEnv(MatplotlibRenderEnv, Env):
     """An environment of a chain of masses, connected by "springs".
 
-    The first mass is fixed at a given point,
-    and the last mass can be controlled by setting its velocity.
+    The first mass is fixed at a given point, and the last mass can be controlled by setting its
+    velocity.
     The goal is to move the chain to a target position while minimizing mass velocity.
 
-    The system corresponds to the example in
-    L. Wirsching, H. G. Bock, and M. Diehl, “Fast nmpc of a chain of masses
-    connected by springs,” in 2006 IEEE Conference on Computer Aided Control
-    System Design, 2006 IEEE International Conference on Control Applications,
-    2006 IEEE International Symposium on Intelligent Control, pp. 591–596, IEEE,
-    2006.
-    NOTE: An additoinal damping term has been added to the dynamics.
+    The system corresponds to the example in L. Wirsching, H. G. Bock, and M. Diehl, “Fast nmpc of a
+    chain of masses connected by springs,” in 2006 IEEE Conference on Computer Aided Control System
+    Design, 2006 IEEE International Conference on Control Applications, 2006 IEEE International
+    Symposium on Intelligent Control, pp. 591–596, IEEE, 2006.
+    NOTE: An additinal damping term has been added to the dynamics.
 
     Observation Space:
     ------------------
 
-    The observation is of shape `(6 * n_mass - 9,)` representing the state of the
-    system. It consists of the 3D positions of the `n_mass - 1` free masses and
-    the 3D velocities of the `n_mass - 2` masses (the free masses, except the last mass,
-    whose velocity is being controlled).
+    The observation is of shape `(6 * n_mass - 9,)` representing the state of the system. It
+    consists of the 3D positions of the `n_mass - 1` free masses and the 3D velocities of the
+    `n_mass - 2` masses (the free masses, except the last mass, whose velocity is being controlled).
 
     The state is structured as `[p_2, ..., p_{n_mass}, v_2, ..., v_{n_mass-1}]`, where `p_i` is the
     position of the i-th mass and `v_i` is its velocity.
@@ -79,25 +76,23 @@ class ChainEnv(MatplotlibRenderEnv, gym.Env):
     Reward:
     -------
 
-    The reward is designed to encourage the agent to move the last mass to the target position
-    while minimizing velocity. It is calculated as:
-    `r = 10 * (r_dist + r_vel)`
-    where:
+    The reward is designed to encourage the agent to move the last mass to the target position while
+    minimizing velocity. It is calculated as `r = 10 * (r_dist + r_vel)`, where:
     - `r_dist` is the negative l1 norm of the distance between the last mass
         and the target position.
     - `r_vel` is the negative l2 norm of the velocities of the masses, scaled by 0.1.
 
     Termination and truncation:
     ---------------------------
-    The system never terminates, but the episode is truncated after
-    `max_time` seconds simulation time.
+    The system never terminates, but the episode is truncated after `max_time` seconds simulation
+    time.
 
     Info:
     -----
     The info dictionary contains:
     - "task": {"violation": bool, "success": bool}
-      - violation: Always False.
-      - success: True if goal reached
+    - violation: Always False.
+    - success: True if goal reached
 
     Attributes:
         cfg: Configuration for the environment.
@@ -123,8 +118,8 @@ class ChainEnv(MatplotlibRenderEnv, gym.Env):
     pos_last_ref: np.ndarray
     nx_pos: int
     nx_vel: int
-    observation_space: gym.spaces.Box
-    action_space: gym.spaces.Box
+    observation_space: Box
+    action_space: Box
     trajectory: list[np.ndarray]
     dyn_param_dict: dict[str, np.ndarray]
     discrete_dynamics: Callable
@@ -139,8 +134,8 @@ class ChainEnv(MatplotlibRenderEnv, gym.Env):
         self,
         render_mode: str | None = None,
         cfg: ChainEnvConfig | None = None,
-    ):
-        """Initialize the Chain environment.
+    ) -> None:
+        """Initialize the `ChainEnv` environment.
 
         Args:
             render_mode: The mode to render with. Supported modes are: human, rgb_array, None.
@@ -167,12 +162,12 @@ class ChainEnv(MatplotlibRenderEnv, gym.Env):
         pos_min = -pos_max
         vel_max = np.array([self.cfg.vmax, self.cfg.vmax, self.cfg.vmax] * (self.cfg.n_mass - 2))
         vel_min = -vel_max
-        self.observation_space = spaces.Box(
+        self.observation_space = Box(
             low=np.concatenate([pos_min, vel_min], dtype=np.float32),
             high=np.concatenate([pos_max, vel_max], dtype=np.float32),
         )
 
-        self.action_space = spaces.Box(
+        self.action_space = Box(
             low=np.array([-self.cfg.vmax, -self.cfg.vmax, -self.cfg.vmax], dtype=np.float32),
             high=np.array([self.cfg.vmax, self.cfg.vmax, self.cfg.vmax], dtype=np.float32),
         )
@@ -190,18 +185,13 @@ class ChainEnv(MatplotlibRenderEnv, gym.Env):
         self.discrete_dynamics = create_discrete_casadi_dynamics(self.cfg.n_mass, self.cfg.dt)
 
         self.resting_chain_solver = RestingChainSolver(
-            n_mass=self.cfg.n_mass,
-            f_expl=define_f_expl_expr,
-            fix_point=self.fix_point,
-            **self.dyn_param_dict,
+            self.cfg.n_mass, define_f_expl_expr, self.fix_point, **self.dyn_param_dict
         )
 
         self.x_ref, self.u_ref = self.resting_chain_solver(p_last=self.pos_last_ref)
 
-        self.ellipsoid = Ellipsoid(
-            center=self.fix_point,
-            radii=np.sum(self.dyn_param_dict["L"].reshape(-1, 3), axis=0),
-        )
+        radii = np.sum(self.dyn_param_dict["L"].reshape(-1, 3), axis=0)
+        self.ellipsoid = Ellipsoid(self.fix_point, radii)
 
     def step(self, action: np.ndarray) -> tuple[Any, float, bool, bool, dict]:
         u = action
@@ -258,7 +248,7 @@ class ChainEnv(MatplotlibRenderEnv, gym.Env):
 
         return x_ss, u_ss
 
-    def _render_setup(self):
+    def _render_setup(self) -> None:
         """One-time setup for the rendering."""
         self._fig, self._ax = plt.subplots(3, 1, figsize=(8, 10))
 
@@ -286,7 +276,7 @@ class ChainEnv(MatplotlibRenderEnv, gym.Env):
             )
             ax_k.legend()
 
-    def _render_frame(self):
+    def _render_frame(self) -> None:
         """Update the plot with the current environment state."""
         pos = np.vstack([self.fix_point, self.state[: self.nx_pos].reshape(-1, 3)])
         for k, line in enumerate(self.lines):
