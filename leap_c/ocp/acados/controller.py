@@ -2,7 +2,7 @@ from typing import Callable
 
 import gymnasium as gym
 import numpy as np
-import torch
+from torch import Tensor
 
 from leap_c.controller import ParameterizedController
 from leap_c.ocp.acados.diff_mpc import AcadosDiffMpcCtx, collate_acados_diff_mpc_ctx
@@ -11,8 +11,8 @@ from leap_c.ocp.acados.torch import AcadosDiffMpcTorch
 
 
 class AcadosController(ParameterizedController):
-    """Acados-based controller, providing a simple standard implementation
-    of the functionalities needed in the `ParameterizedController` interface.
+    """Acados-based controller, providing a simple standard implementation of the functionalities
+    needed in the `ParameterizedController` interface.
 
     Attributes:
         param_manager: For managing the parameters of the ocp.
@@ -31,11 +31,11 @@ class AcadosController(ParameterizedController):
         self.diff_mpc = diff_mpc
 
     def forward(
-        self, obs: torch.Tensor, param: torch.Tensor, ctx: AcadosDiffMpcCtx | None = None
-    ) -> tuple[AcadosDiffMpcCtx, torch.Tensor]:
-        """Passes obs, param and ctx, as-is to the AcadosDiffMpcTorch object. Note that param
-        is assumed to be the learnable parameters only, while the non-learnable parameters
-        are automatically obtained from the param_manager.
+        self, obs: Tensor, param: Tensor, ctx: AcadosDiffMpcCtx | None = None
+    ) -> tuple[AcadosDiffMpcCtx, Tensor]:
+        """Passes obs, param and ctx, as-is to the `AcadosDiffMpcTorch` object. Note that param is
+        assumed to be the learnable parameters only, while the non-learnable parameters are
+        automatically obtained from the param_manager.
         """
         p_stagewise = self.param_manager.combine_non_learnable_parameter_values(
             batch_size=obs.shape[0]
@@ -52,5 +52,5 @@ class AcadosController(ParameterizedController):
     def param_space(self) -> gym.Space:
         return self.param_manager.get_param_space(dtype=np.float32)
 
-    def default_param(self, obs) -> np.ndarray:
-        return self.param_manager.learnable_parameters_default.cat.full().flatten()  # type:ignore
+    def default_param(self, obs: np.ndarray | None) -> np.ndarray:
+        return self.param_manager.learnable_parameters_default.cat.full().flatten()
