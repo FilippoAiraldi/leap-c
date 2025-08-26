@@ -105,7 +105,7 @@ def create_planner(
         raise ValueError(f"Planner '{planner_name}' is not registered or does not exist.")
 
     planner_class, config_class, default_cfg_kwargs = PLANNER_REGISTRY[planner_name]
-    cfg = config_class(**{**default_cfg_kwargs, **kw})
+    cfg = config_class(**default_cfg_kwargs, **kw)
     kw = {"cfg": cfg}
 
     if reuse_code_base_dir is not None:
@@ -145,7 +145,7 @@ def create_controller(
         raise ValueError(f"Controller '{controller_name}' is not registered or does not exist.")
 
     controller_class, config_class, default_cfg_kwargs = CONTROLLER_REGISTRY[controller_name]
-    cfg = config_class(**{**default_cfg_kwargs, **kw})
+    cfg = config_class(**default_cfg_kwargs, **kw)
     kw = {"cfg": cfg}
 
     if reuse_code_base_dir is not None:
