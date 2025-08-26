@@ -2,7 +2,7 @@ from typing import Callable
 
 import gymnasium as gym
 import numpy as np
-import torch
+from torch import Tensor
 
 from leap_c.controller import ParameterizedController
 from leap_c.ocp.acados.diff_mpc import AcadosDiffMpcCtx, collate_acados_diff_mpc_ctx
@@ -31,12 +31,11 @@ class AcadosController(ParameterizedController):
         self.diff_mpc = diff_mpc
 
     def forward(
-        self, obs: torch.Tensor, param: torch.Tensor, ctx: AcadosDiffMpcCtx | None = None
-    ) -> tuple[AcadosDiffMpcCtx, torch.Tensor]:
-        """Passes obs, param and ctx, as-is to the AcadosDiffMpc object. Note that param
-        is assumed to be the learnable parameters only, while the non-learnable parameters
-        are automatically obtained from the param_manager.
-        """
+        self, obs: Tensor, param: Tensor, ctx: AcadosDiffMpcCtx | None = None
+    ) -> tuple[AcadosDiffMpcCtx, Tensor]:
+        """Passes obs, param and ctx, as-is to the AcadosDiffMpc object. Note that param is assumed
+        to be the learnable parameters only, while the non-learnable parameters are automatically
+        obtained from the param_manager."""
         p_stagewise = self.param_manager.combine_non_learnable_parameter_values(
             batch_size=obs.shape[0]
         )
