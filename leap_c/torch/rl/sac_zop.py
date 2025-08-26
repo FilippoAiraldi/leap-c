@@ -27,10 +27,10 @@ from leap_c.utils.gym import seed_env, wrap_env
 
 @dataclass(kw_only=True)
 class SacZopTrainerConfig(SacTrainerConfig):
-    """Specific settings for the Zop trainer.
+    """Specific settings for the `SacZopTrainer`.
 
     Attributes:
-        actor: Configuration for the HierachicalMPCActor.
+        actor: Configuration for the `HierachicalMPCActor`.
     """
 
     actor: HierachicalMPCActorConfig = field(
@@ -110,7 +110,6 @@ class SacZopTrainer(Trainer[SacZopTrainerConfig, CtxType], Generic[CtxType]):
         if extractor_cls is not None:
             cfg.actor.extractor_name = extractor_cls
 
-        # Get extractor class for critic
         critic_extractor_cls = get_extractor_cls(cfg.actor.extractor_name)
 
         args = (critic_extractor_cls, param_space, obs_space, cfg.critic_mlp, cfg.num_critics)

@@ -25,7 +25,7 @@ from leap_c.utils.gym import seed_env, wrap_env
 
 @dataclass(kw_only=True)
 class SacTrainerConfig(TrainerConfig):
-    """Contains the necessary configuration for a SacTrainer.
+    """Contains the necessary configuration for a `SacTrainer`.
 
     Attributes:
         critic_mlp: The configuration for the Q-networks (critics).
@@ -38,15 +38,14 @@ class SacTrainerConfig(TrainerConfig):
         lr_q: The learning rate for the Q-networks.
         lr_pi: The learning rate for the policy network.
         lr_alpha: The learning rate for the temperature parameter.
-            Can be set to None to avoid updating the temperature.
+            Can be set to `None` to avoid updating the temperature.
         init_alpha: The initial temperature parameter.
         target_entropy: The minimum target entropy for the policy.
             If `None`, it is set automatically depending on dimensions of the action space.
         entropy_reward_bonus: Whether to add an entropy bonus to the reward.
         num_critics: The number of critic networks.
         update_freq: The frequency of updating the networks (in steps).
-        distribution_name: The type of bounded distribution to use
-            for sampling inside the policy.
+        distribution_name: The type of bounded distribution to use for sampling inside the policy.
     """
 
     critic_mlp: MlpConfig = field(default_factory=MlpConfig)

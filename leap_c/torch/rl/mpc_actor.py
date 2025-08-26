@@ -5,7 +5,6 @@ from math import prod
 from typing import Any, Generic, Literal, NamedTuple, Self
 
 import gymnasium as gym
-import gymnasium.spaces as spaces
 import torch
 import torch.nn as nn
 
@@ -27,8 +26,8 @@ class StochasticMPCActorOutput(NamedTuple):
         log_prob: The log-probability of the distribution that led to the action. Can be either from
           the parameter or action distribution, depending on the noise mode.
         stats: A dictionary containing statistics from internal modules.
-        action: The action output by the controller (None if only_param=True).
-        status: The status of the MPC solver (0 if successful).
+        action: The action output by the controller (`None` if `only_param == True`).
+        status: The status of the MPC solver (`0` if successful).
         ctx: The context object containing information about the MPC solve.
     """
 
@@ -41,14 +40,14 @@ class StochasticMPCActorOutput(NamedTuple):
 
     def __post_init__(self) -> None:
         if torch.isnan(self.param).any():
-            raise ValueError("NaN detected in StochasticMPCActorOutput.param")
+            raise ValueError("NaN detected in `StochasticMPCActorOutput.param`")
         if torch.isnan(self.log_prob).any():
-            raise ValueError("NaN detected in StochasticMPCActorOutput.log_prob")
+            raise ValueError("NaN detected in `StochasticMPCActorOutput.log_prob`")
         if self.action is not None and torch.isnan(self.action).any():
-            raise ValueError("NaN detected in StochasticMPCActorOutput.action")
+            raise ValueError("NaN detected in `StochasticMPCActorOutput.action`")
 
     def select(self, mask: torch.Tensor) -> Self:
-        """Select a subset of the output based on the given mask. Discards stats and ctx."""
+        """Select a subset of the output based on the given mask. Discards `stats` and `ctx`."""
         return StochasticMPCActorOutput(
             self.param[mask],
             self.log_prob[mask],
@@ -61,20 +60,19 @@ class StochasticMPCActorOutput(NamedTuple):
 
 @dataclass(kw_only=True)
 class HierachicalMPCActorConfig:
-    """Configuration for HierachicalMPCActor.
+    """Configuration for `HierachicalMPCActor`.
 
     Attributes:
-        noise: Where to inject noise - "param" for parameter space, "action" for action space.
+        noise: Where to inject noise - `"param"` for parameter space, `"action"` for action space.
         extractor_name: The name of the feature extractor to use.
         mlp: The configuration for the MLP predicting distribution parameters.
         distribution_name: The name of the bounded distribution for sampling.
-            In "param" mode: distribution for sampling parameters.
-            In "action" mode: distribution for sampling actions (params are deterministic).
-        distribution_kwargs: Additional keyword arguments for the distribution constructor.
-        residual: Whether to use residual learning (param = default_param + learned_param).
-            Only applicable in parameter noise mode (noise="param").
+            In `"param"` mode: distribution for sampling parameters.
+            In `"action"` mode: distribution for sampling actions (params are deterministic).
+        residual: Whether to use residual learning (i.e., `param = default_param + learned_param`).
+            Only applicable in parameter noise mode (`noise == "param"`).
         entropy_correction: Whether to apply entropy correction based on the Jacobian.
-            Only applicable in parameter noise mode (noise="param").
+            Only applicable in parameter noise mode (`noise == "param"`).
     """
 
     noise: Literal["param", "action"] = "param"
@@ -93,15 +91,15 @@ class HierachicalMPCActor(nn.Module, Generic[CtxType]):
     1. High-level policy predicts controller parameters
     2. Low-level controller computes actions from parameters
 
-    Noise can be injected at either level, controlled by action_distribution_name:
+    Noise can be injected at either level, controlled by `HierachicalMPCActorConfig.noise`:
 
-    Parameter noise mode (noise="param"):
+    Parameter noise mode (`noise == "param"`):
         - Stochastic parameters → Deterministic controller → Deterministic actions
         - Noise is added to controller parameters before execution
         - Supports residual learning (parameters as offsets from defaults)
         - Supports entropy correction based on action-to-parameter Jacobian
 
-    Action noise mode (noise="action"):
+    Action noise mode (`noise == "action"`):
         - Deterministic parameters → Deterministic controller → Stochastic actions
         - Controller parameters are predicted deterministically
         - Noise is added to controller output actions
@@ -112,10 +110,12 @@ class HierachicalMPCActor(nn.Module, Generic[CtxType]):
         extractor: Feature extractor for observations.
         mlp: MLP that outputs distribution parameters (high-level policy).
         param_distribution: Bounded distribution for parameters.
-        action_distribution: Bounded distribution for actions (None in parameter noise mode).
-        residual: Whether to use residual learning (parameter noise mode only).
-        entropy_correction: Whether to apply Jacobian-based entropy correction
-            (parameter noise mode only).
+        action_distribution: Bounded distribution for actions
+            `None` in parameter noise mode (`noise == "param"`).
+        residual: Whether to use residual learning.
+            Only applicable in parameter noise mode (`noise == "param"`).
+        entropy_correction: Whether to apply Jacobian-based entropy correction.
+            Only applicable in parameter noise mode (`noise == "param"`).
     """
 
     controller: ParameterizedController[CtxType]
@@ -147,7 +147,7 @@ class HierachicalMPCActor(nn.Module, Generic[CtxType]):
         self.residual = cfg.residual and cfg.noise == "param"
         self.entropy_correction = cfg.entropy_correction and cfg.noise == "param"
 
-        param_space: spaces.Box = controller.param_space
+        param_space = controller.param_space
         param_dim = param_space.shape[0]
         action_dim = prod(action_space.shape)
 
@@ -164,7 +164,7 @@ class HierachicalMPCActor(nn.Module, Generic[CtxType]):
 
             self.action_distribution = None
             # MLP outputs: param distribution parameters
-            output_sizes = list(self.param_distribution.parameter_size(param_dim))
+            output_sizes = self.param_distribution.parameter_size(param_dim)
         else:
             # action noise: deterministic param transform + action distribution
             # Note: param_distribution is used deterministically
@@ -244,7 +244,7 @@ class HierachicalMPCActor(nn.Module, Generic[CtxType]):
 
             # merge controller stats
             if ctx.log is not None:
-                stats = stats | ctx.log
+                stats |= ctx.log
 
             return StochasticMPCActorOutput(param, log_prob, stats, action, ctx.status, ctx)
 
@@ -265,6 +265,6 @@ class HierachicalMPCActor(nn.Module, Generic[CtxType]):
         # merge stats
         stats = param_stats | action_stats
         if ctx.log is not None:
-            stats = stats | ctx.log
+            stats |= ctx.log
 
         return StochasticMPCActorOutput(param, log_prob, stats, action, ctx.status, ctx)
