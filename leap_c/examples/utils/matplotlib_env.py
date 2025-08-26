@@ -68,17 +68,14 @@ class MatplotlibRenderEnv(abc.ABC, gym.Env[ObsType, ActType], Generic[ObsType, A
             self._render_frame()
 
             if self.render_mode == "human":
-                self._fig.canvas.draw()  # type: ignore
-                self._fig.canvas.flush_events()  # type: ignore
+                self._fig.canvas.draw()
+                self._fig.canvas.flush_events()
             elif self.render_mode == "rgb_array":
                 canvas = FigureCanvas(self._fig)
-                canvas.draw()  # type: ignore
+                canvas.draw()
 
-                image = np.frombuffer(
-                    self._fig.canvas.buffer_rgba(),  # type:ignore
-                    dtype=np.uint8,
-                )
-                width, height = self._fig.canvas.get_width_height()  # type:ignore
+                image = np.frombuffer(self._fig.canvas.buffer_rgba(), dtype=np.uint8)
+                width, height = self._fig.canvas.get_width_height()
                 return image.reshape(height, width, 4)[:, :, :3]
             else:
                 raise ValueError(f"Unsupported render mode: {self.render_mode}")

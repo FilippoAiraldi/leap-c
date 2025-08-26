@@ -38,7 +38,7 @@ class AcadosDiffMpcCtx:
     Attributes:
         iterate: The solution iterate from the forward pass. Can be used for, e.g., initializing the
             next solve.
-        status: The status of the solver after the forward pass. 0 indicates success, non-zero
+        status: The status of the solver after the forward pass. `0` indicates success, non-zero
             values indicate various errors.
         log: Statistics from the forward solve containing info like success rates and timings.
         solver_input: The input used for the forward pass.

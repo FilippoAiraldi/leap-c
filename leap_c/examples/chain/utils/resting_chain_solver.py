@@ -2,7 +2,6 @@ from typing import Any, Callable, TypeAlias
 
 import casadi as ca
 import numpy as np
-from casadi import vertcat
 from casadi.tools import entry, struct_symSX
 
 FexplType: TypeAlias = Callable[[struct_symSX, ca.SX, dict[str, ca.SX], ca.SX], ca.SX]
@@ -31,31 +30,19 @@ def _define_nlp_solver(
             entry("vel", shape=(3, 1), repeat=n_mass - 2),
         ]
     )
-
     xdot = ca.SX.sym("xdot", x.cat.shape)
-
     u = ca.SX.sym("u", 3, 1)
+    p = _define_param_struct(n_mass)
 
-    p = _define_param_struct(n_mass=n_mass)
-
-    # decision variables
-    w = vertcat(*[x.cat, xdot, u])
-
-    g = vertcat(
-        *[
-            xdot
-            - f_expl(
-                x=x,
-                u=u,
-                p={key: vertcat(*p[key]) for key in ["m", "D", "L", "C", "w"]},
-                fix_point=p["fix_point"],
-            ),
-            x["pos", -1] - p["p_last"],
-            u,
-        ]
+    f_expl_out = f_expl(
+        x=x,
+        u=u,
+        p={key: ca.vertcat(*p[key]) for key in ["m", "D", "L", "C", "w"]},
+        fix_point=p["fix_point"],
     )
+    g = ca.vertcat(xdot - f_expl_out, x["pos", -1] - p["p_last"], u)
 
-    nlp = {"x": w, "f": 0, "g": g, "p": p.cat}
+    nlp = {"x": ca.vertcat(x.cat, xdot, u), "f": 0, "g": g, "p": p.cat}
 
     opts = {"print_time": False, "ipopt": {"print_level": 0, "sb": "yes"}}
 
@@ -63,6 +50,8 @@ def _define_nlp_solver(
 
 
 class RestingChainSolver:
+    """Computes the resting configuration of a chain given the position of the last mass."""
+
     def __init__(
         self,
         n_mass: int,
@@ -95,19 +84,11 @@ class RestingChainSolver:
 
     def __call__(self, p_last: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         self.p0["p_last"] = p_last
-
-        self.w0 = np.concatenate(
-            [
-                self.x0.cat.full().flatten(),
-                0 * self.x0.cat.full().flatten(),
-                np.zeros(3),
-            ]
-        )
+        x0: np.ndarray = self.x0.cat.full().flatten()
+        self.w0 = np.concatenate((x0, np.zeros(x0.size + 3)))
         sol = self.nlp_solver(x0=self.w0, lbg=0, ubg=0, p=self.p0.cat)
 
         nx = self.x0.cat.shape[0]
-
         x_ss = sol["x"].full()[:nx].flatten()
         u_ss = sol["x"].full()[-3:].flatten()
-
         return x_ss, u_ss

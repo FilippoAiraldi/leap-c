@@ -16,8 +16,8 @@ def flatten_space(space: gym.Space) -> gym.spaces.Box:
 def flatten(space: gym.Space, x: Any):
     """Flatten a value from a Gymnasium space using torch operations."""
     if isinstance(space, gym.spaces.Box):
-        x = torch.as_tensor(x)
-        return x.reshape(*x.shape[: -len(space.shape)], gym_utils.flatdim(space))
+        y = torch.as_tensor(x)
+        return y.reshape(*y.shape[: -len(space.shape)], gym_utils.flatdim(space))
 
     if isinstance(space, gym.spaces.Dict):
         return torch.cat(
@@ -32,17 +32,17 @@ def flatten(space: gym.Space, x: Any):
 
 def unflatten(space: gym.Space, x: Any):
     """Unflatten a flat tensor into a value matching a Gymnasium space."""
-    x = torch.as_tensor(x)
+    y = torch.as_tensor(x)
 
     if isinstance(space, gym.spaces.Box):
-        return x.reshape(*x.shape[:-1], *space.shape)
+        return y.reshape(*y.shape[:-1], *space.shape)
 
     if isinstance(space, gym.spaces.Dict):
         out = {}
         offset = 0
         for key, subspace in space.spaces.items():
             width = gym_utils.flatdim(subspace)
-            out[key] = unflatten(subspace, x[..., offset : offset + width])
+            out[key] = unflatten(subspace, y[..., offset : offset + width])
             offset += width
         return out
 
@@ -51,7 +51,7 @@ def unflatten(space: gym.Space, x: Any):
         offset = 0
         for subspace in space.spaces:
             width = gym_utils.flatdim(subspace)
-            out.append(unflatten(subspace, x[..., offset : offset + width]))
+            out.append(unflatten(subspace, y[..., offset : offset + width]))
             offset += width
         return tuple(out)
 

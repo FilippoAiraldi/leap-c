@@ -22,10 +22,9 @@ class ChainControllerConfig:
 
     Attributes:
         N_horizon: The number of steps in the MPC horizon.
-            The MPC will have N+1 nodes (the nodes 0...N-1 and the terminal
-            node N).
-        T_horizon: The duration of the MPC horizon. One step during planning
-            will equal T_horizon/N_horizon simulation time.
+            The MPC will have `N+1` nodes (the nodes `0...N-1` and the terminal node `N`).
+        T_horizon: The duration of the MPC horizon. One step during planning will equal
+            `T_horizon / N_horizon` simulation time.
         n_mass: The number of masses in the chain.
         discount_factor: discount factor along the MPC horizon.
             If `None`, it defaults to the behavior of `AcadosOcpOptions.cost_scaling`.
@@ -57,19 +56,17 @@ class ChainPlanner(ParameterizedPlanner[AcadosDiffMpcCtx]):
     The inequality constraints are box constraints on the action.
 
     Attributes:
-        cfg: A configuration object containing high-level settings for the MPC problem,
-            such as horizon length.
+        cfg: A configuration object containing high-level settings for the MPC problem, such as
+            horizon length.
     """
 
     cfg: ChainControllerConfig
     collate_fn_map = {AcadosDiffMpcCtx: collate_acados_diff_mpc_ctx}
 
     def __init__(
-        self,
-        cfg: ChainControllerConfig | None = None,
-        export_directory: Path | None = None,
+        self, cfg: ChainControllerConfig | None = None, export_directory: Path | None = None
     ) -> None:
-        """Initializes the ChainController.
+        """Initializes the `ChainController`.
 
         Args:
             cfg: cfg: A configuration object containing high-level settings for the
@@ -95,10 +92,7 @@ class ChainPlanner(ParameterizedPlanner[AcadosDiffMpcCtx]):
         }
 
         resting_chain_solver = RestingChainSolver(
-            n_mass=self.cfg.n_mass,
-            f_expl=define_f_expl_expr,
-            **dyn_param_dict,
-            fix_point=fix_point,
+            self.cfg.n_mass, define_f_expl_expr, fix_point, **dyn_param_dict
         )
 
         x_ref, _ = resting_chain_solver(p_last=pos_last_mass_ref)
@@ -110,9 +104,7 @@ class ChainPlanner(ParameterizedPlanner[AcadosDiffMpcCtx]):
             T_horizon=self.cfg.T_horizon,
             n_mass=self.cfg.n_mass,
         )
-
-        initializer = ChainInitializer(ocp, x_ref=x_ref)
-
+        initializer = ChainInitializer(ocp, x_ref)
         diff_mpc = AcadosDiffMpcTorch(
             ocp,
             param_manager,

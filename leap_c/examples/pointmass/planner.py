@@ -16,7 +16,7 @@ from leap_c.utils.parameters import broadcast_default_param
 
 @dataclass(kw_only=True)
 class PointMassControllerConfig:
-    """Configuration for the PointMass controller.
+    """Configuration for the `PointMass` controller.
 
     Attributes:
         N_horizon: The number of steps in the MPC horizon.
@@ -54,8 +54,8 @@ class PointMassPlanner(ParameterizedPlanner[AcadosDiffMpcCtx]):
     world (soft/slacked).
 
     Attributes:
-        cfg: A configuration object containing high-level settings for the MPC problem,
-            such as horizon length.
+        cfg: A configuration object containing high-level settings for the MPC problem, such as
+            horizon length.
     """
 
     cfg: PointMassControllerConfig
@@ -66,12 +66,11 @@ class PointMassPlanner(ParameterizedPlanner[AcadosDiffMpcCtx]):
         cfg: PointMassControllerConfig | None = None,
         export_directory: Path | None = None,
     ) -> None:
-        """Initializes the PointMassController.
+        """Initializes the `PointMassController`.
 
         Args:
-            cfg: A configuration object containing high-level settings for the
-                MPC problem, such as horizon length and maximum force.
-                If not provided, a default config is used.
+            cfg: A configuration object containing high-level settings for the MPC problem, such as
+                horizon length and maximum force. If not provided, a default config is used.
             export_directory: Optional directory for generated acados solver code.
         """
         self.cfg = PointMassControllerConfig() if cfg is None else cfg
@@ -79,9 +78,9 @@ class PointMassPlanner(ParameterizedPlanner[AcadosDiffMpcCtx]):
 
         ocp, param_manager, param_space, default_param = export_parametric_ocp(
             name="pointmass",
+            Fmax=self.cfg.Fmax,
             N_horizon=self.cfg.N_horizon,
             T_horizon=self.cfg.T_horizon,
-            Fmax=self.cfg.Fmax,
             x_ref_value=self.cfg.x_ref_value,
         )
 

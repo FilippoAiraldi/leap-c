@@ -141,7 +141,6 @@ class SacFopTrainer(Trainer[SacFopTrainerConfig, CtxType], Generic[CtxType]):
         if extractor_cls is not None:
             cfg.actor.extractor_name = extractor_cls
 
-        # Get extractor class for critic
         critic_extractor_cls = get_extractor_cls(cfg.actor.extractor_name)
 
         args = (critic_extractor_cls, act_space, obs_space, cfg.critic_mlp, cfg.num_critics)
