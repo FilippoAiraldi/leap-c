@@ -27,10 +27,10 @@ from leap_c.utils.gym import seed_env, wrap_env
 
 @dataclass(kw_only=True)
 class SacFopTrainerConfig(SacTrainerConfig):
-    """Specific settings for the Fop trainer.
+    """Specific settings for the `SacFopTrainer`.
 
     Attributes:
-        actor: Configuration for the HierachicalMPCActor.
+        actor: Configuration for the `HierachicalMPCActor`.
     """
 
     actor: HierachicalMPCActorConfig = field(default_factory=HierachicalMPCActorConfig)
@@ -107,9 +107,7 @@ class SacFopTrainer(Trainer[SacFopTrainerConfig, CtxType], Generic[CtxType]):
         if extractor_cls is not None:
             cfg.actor.extractor_name = extractor_cls
 
-        # Get extractor class for critic
         critic_extractor_cls = get_extractor_cls(cfg.actor.extractor_name)
-
         self.q = SacCritic(
             critic_extractor_cls, action_space, observation_space, cfg.critic_mlp, cfg.num_critics
         )
@@ -120,7 +118,6 @@ class SacFopTrainer(Trainer[SacFopTrainerConfig, CtxType], Generic[CtxType]):
         self.q_optim = torch.optim.Adam(self.q.parameters(), lr=cfg.lr_q)
 
         self.pi = HierachicalMPCActor(cfg.actor, observation_space, action_space, controller)
-
         self.pi_optim = torch.optim.Adam(self.pi.parameters(), lr=cfg.lr_pi)
 
         self.log_alpha = nn.Parameter(torch.tensor(cfg.init_alpha).log())
@@ -235,7 +232,7 @@ class SacFopTrainer(Trainer[SacFopTrainerConfig, CtxType], Generic[CtxType]):
                     target = r[:, None] + self.cfg.gamma * (1 - te[:, None]) * q_target
 
                 q = torch.cat(self.q(o, a), dim=1)
-                q_loss = torch.mean((q - target).pow(2))
+                q_loss = torch.mean((q - target).square())
 
                 self.q_optim.zero_grad()
                 q_loss.backward()

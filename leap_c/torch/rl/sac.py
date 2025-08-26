@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Generator, Type
+from typing import Any, Generator
 
 import gymnasium as gym
 import gymnasium.spaces as spaces
@@ -25,7 +25,7 @@ from leap_c.utils.gym import seed_env, wrap_env
 
 @dataclass(kw_only=True)
 class SacTrainerConfig(TrainerConfig):
-    """Contains the necessary configuration for a SacTrainer.
+    """Contains the necessary configuration for a `SacTrainer`.
 
     Attributes:
         critic_mlp: The configuration for the Q-networks (critics).
@@ -38,15 +38,14 @@ class SacTrainerConfig(TrainerConfig):
         lr_q: The learning rate for the Q-networks.
         lr_pi: The learning rate for the policy network.
         lr_alpha: The learning rate for the temperature parameter.
-            Can be set to None to avoid updating the temperature.
+            Can be set to `None` to avoid updating the temperature.
         init_alpha: The initial temperature parameter.
         target_entropy: The minimum target entropy for the policy.
             If `None`, it is set automatically depending on dimensions of the action space.
         entropy_reward_bonus: Whether to add an entropy bonus to the reward.
         num_critics: The number of critic networks.
         update_freq: The frequency of updating the networks (in steps).
-        distribution_name: The type of bounded distribution to use
-            for sampling inside the policy.
+        distribution_name: The type of bounded distribution to use for sampling inside the policy.
     """
 
     critic_mlp: MlpConfig = field(default_factory=MlpConfig)
@@ -84,7 +83,7 @@ class SacCritic(nn.Module):
 
     def __init__(
         self,
-        extractor_cls: Type[Extractor],
+        extractor_cls: type[Extractor],
         action_space: spaces.Box,
         observation_space: spaces.Space,
         mlp_cfg: MlpConfig,
@@ -134,7 +133,7 @@ class SacActor(nn.Module):
 
     def __init__(
         self,
-        extractor_cls: Type[Extractor],
+        extractor_cls: type[Extractor],
         action_space: spaces.Box,
         observation_space: spaces.Space,
         distribution_name: BoundedDistributionName,
@@ -223,7 +222,7 @@ class SacTrainer(Trainer[SacTrainerConfig, Any]):
         output_path: str | Path,
         device: str,
         train_env: gym.Env,
-        extractor_cls: Type[Extractor] | ExtractorName = "identity",
+        extractor_cls: type[Extractor] | ExtractorName = "identity",
     ) -> None:
         """Initializes the trainer with a configuration, output path, and device.
 
@@ -329,7 +328,7 @@ class SacTrainer(Trainer[SacTrainerConfig, Any]):
                     target = r[:, None] + self.cfg.gamma * (1 - te[:, None]) * q_target
 
                 q = torch.cat(self.q(o, a), dim=1)
-                q_loss = torch.mean((q - target).pow(2))
+                q_loss = torch.mean((q - target).square())
 
                 self.q_optim.zero_grad()
                 q_loss.backward()

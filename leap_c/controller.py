@@ -3,7 +3,7 @@
 from abc import ABCMeta, abstractmethod
 from typing import Any, Callable, Generic, Protocol, TypeVar, Union
 
-import gymnasium as gym
+from gymnasium import Space
 from numpy import ndarray
 from torch import Tensor, nn
 
@@ -79,7 +79,7 @@ class ParameterizedController(nn.Module, Generic[CtxType], metaclass=ABCMeta):
 
     @property
     @abstractmethod
-    def param_space(self) -> gym.Space:
+    def param_space(self) -> Space:
         """Describes the parameter space of the controller.
 
         Returns:

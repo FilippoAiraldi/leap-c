@@ -16,7 +16,7 @@ from leap_c.ocp.acados.torch import AcadosDiffMpcCtx, AcadosDiffMpcTorch
 
 @dataclass(kw_only=True)
 class PointMassControllerConfig:
-    """Configuration for the PointMass controller.
+    """Configuration for the `PointMass` controller.
 
     Attributes:
         N_horizon: The number of steps in the MPC horizon.
@@ -54,8 +54,8 @@ class PointMassPlanner(AcadosPlanner[AcadosDiffMpcCtx]):
     world (soft/slacked).
 
     Attributes:
-        cfg: A configuration object containing high-level settings for the MPC problem,
-            such as horizon length.
+        cfg: A configuration object containing high-level settings for the MPC problem, such as
+            horizon length.
     """
 
     cfg: PointMassControllerConfig
@@ -65,36 +65,27 @@ class PointMassPlanner(AcadosPlanner[AcadosDiffMpcCtx]):
         cfg: PointMassControllerConfig | None = None,
         params: list[AcadosParameter] | None = None,
         export_directory: Path | None = None,
-    ):
-        """Initializes the PointMassController.
+    ) -> None:
+        """Initializes the `PointMassController`.
 
         Args:
-            cfg: A configuration object containing high-level settings for the
-                MPC problem, such as horizon length and maximum force.
-                If not provided, a default config is used.
-            params: An optional list of parameters to define the
-                ocp object. If not provided, default parameters for the PointMass
-                system will be created based on the cfg.
+            cfg: A configuration object containing high-level settings for the MPC problem, such as
+                horizon length and maximum force. If not provided, a default config is used.
+            params: An optional list of parameters to define the ocp object. If not provided,
+                default parameters for the `PointMass` system will be created based on the cfg.
             export_directory: Optional directory for generated acados solver code.
         """
         self.cfg = PointMassControllerConfig() if cfg is None else cfg
-        params = (
-            create_pointmass_params(
-                param_interface=self.cfg.param_interface,
-                N_horizon=self.cfg.N_horizon,
-            )
-            if params is None
-            else params
-        )
-
-        param_manager = AcadosParameterManager(parameters=params, N_horizon=self.cfg.N_horizon)
+        if params is None:
+            params = create_pointmass_params(self.cfg.param_interface, N_horizon=self.cfg.N_horizon)
+        param_manager = AcadosParameterManager(params, self.cfg.N_horizon)
 
         ocp = export_parametric_ocp(
             param_manager=param_manager,
             name="pointmass",
+            Fmax=self.cfg.Fmax,
             N_horizon=self.cfg.N_horizon,
             T_horizon=self.cfg.T_horizon,
-            Fmax=self.cfg.Fmax,
         )
 
         diff_mpc = AcadosDiffMpcTorch(
@@ -105,15 +96,15 @@ class PointMassPlanner(AcadosPlanner[AcadosDiffMpcCtx]):
             num_threads_batch_solver=self.cfg.num_threads_batch_solver,
             dtype=self.cfg.dtype,
         )
-        super().__init__(param_manager=param_manager, diff_mpc=diff_mpc)
+        super().__init__(param_manager, diff_mpc)
 
     def forward(
-        self, obs, action=None, param=None, ctx=None
+        self,
+        obs: torch.Tensor,
+        action: torch.Tensor | None = None,
+        param: torch.Tensor | None = None,
+        ctx: AcadosDiffMpcCtx | None = None,
     ) -> tuple[Any, torch.Tensor, torch.Tensor, torch.Tensor | None]:
-        p_stagewise = self.param_manager.combine_non_learnable_parameter_values(
-            batch_size=obs.shape[0]
-        )
-        # remove wind field from observation, this is only observed by
-        # the network, not used in the MPC
-        x0 = obs[:, :4]
-        return self.diff_mpc(x0, p_global=param, p_stagewise=p_stagewise, ctx=ctx)
+        p_stagewise = self.param_manager.combine_non_learnable_parameter_values(obs.shape[0])
+        x0 = obs[:, :4]  # remove wind field from obs; only observed by the network, not used in MPC
+        return self.diff_mpc(x0, action, param, p_stagewise, ctx=ctx)
