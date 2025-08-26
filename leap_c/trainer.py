@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Generator, Generic, Literal, TypeVar, get_args
@@ -330,14 +331,14 @@ class Trainer(ABC, torch.nn.Module, Generic[TrainerConfigType]):
 
         return ckpt_dir / f"{self.state.step}_{name}.{suffix}"
 
-    def periodic_ckpt_modules(self) -> list[str]:
+    def periodic_ckpt_modules(self) -> Iterable[str]:
         """Returns the modules that should be checkpointed periodically.
 
         This is used for example for tracking policy parameters over time.
         """
         return []
 
-    def singleton_ckpt_modules(self) -> list[str]:
+    def singleton_ckpt_modules(self) -> Iterable[str]:
         """Returns the modules that should be checkpointed only once.
 
         Replay Buffers often should not be stored multiple times as there is overlap.

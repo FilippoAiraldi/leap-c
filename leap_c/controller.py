@@ -1,7 +1,7 @@
 """Module defining the abstract interface for differentiable, parameterized
 controllers in PyTorch."""
 
-from abc import abstractmethod
+from abc import ABCMeta, abstractmethod
 from typing import Any, Callable, Union
 
 import gymnasium as gym
@@ -9,7 +9,7 @@ import numpy as np
 import torch.nn as nn
 
 
-class ParameterizedController(nn.Module):
+class ParameterizedController(nn.Module, metaclass=ABCMeta):
     """Abstract base class for differentiable parameterized controllers.
 
     Attributes:
