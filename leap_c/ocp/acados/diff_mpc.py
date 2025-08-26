@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Literal, Sequence
+from typing import Callable, Literal, Sequence, get_args
 
 import numpy as np
 from acados_template import AcadosOcp
@@ -37,7 +37,7 @@ class AcadosDiffMpcCtx:
     Attributes:
         iterate: The solution iterate from the forward pass. Can be used for, e.g., initializing the
             next solve.
-        status: The status of the solver after the forward pass. 0 indicates success, non-zero
+        status: The status of the solver after the forward pass. `0` indicates success, non-zero
             values indicate various errors.
         log: Statistics from the forward solve containing info like success rates and timings.
         solver_input: The input used for the forward pass.
@@ -76,8 +76,7 @@ class AcadosDiffMpcCtx:
 
 
 def collate_acados_diff_mpc_ctx(
-    batch: Sequence[AcadosDiffMpcCtx],
-    collate_fn_map: dict[str, Callable] | None = None,
+    batch: Sequence[AcadosDiffMpcCtx], collate_fn_map: dict[str, Callable] | None = None
 ) -> AcadosDiffMpcCtx:
     """Collates a batch of AcadosDiffMpcCtx objects into a single object."""
     return AcadosDiffMpcCtx(
@@ -154,11 +153,7 @@ class AcadosDiffMpcFunction(DiffFunction):
                 else num_threads_batch_solver,
             )
         )
-
-        if initializer is None:
-            self.initializer = ZeroDiffMpcInitializer(ocp)
-        else:
-            self.initializer = initializer
+        self.initializer = ZeroDiffMpcInitializer(ocp) if initializer is None else initializer
 
     def forward(  # type: ignore
         self,
@@ -335,8 +330,8 @@ class AcadosDiffMpcFunction(DiffFunction):
             ValueError: If `field_name` is not recognized.
         """
         # check if already calculated
-        if getattr(ctx, field_name) is not None:
-            return getattr(ctx, field_name)
+        if (attr := getattr(ctx, field_name)) is not None:
+            return attr
 
         prepare_batch_solver_for_backward(self.backward_batch_solver, ctx.iterate, ctx.solver_input)
 
@@ -399,7 +394,10 @@ class AcadosDiffMpcFunction(DiffFunction):
                 [s.eval_and_get_optimal_value_gradient(with_respect_to) for s in active_solvers]
             )
         else:
-            raise ValueError
+            raise ValueError(
+                f"Unexpected field name `{field_name}`; available options: "
+                + " ".join(get_args(AcadosDiffMpcSensitivityOptions))
+            )
 
         setattr(ctx, field_name, sens)
 

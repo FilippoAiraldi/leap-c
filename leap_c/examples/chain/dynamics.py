@@ -16,8 +16,7 @@ def define_f_expl_expr(
 ) -> ca.SX:
     """CasADi symbolic chain dynamics.
 
-    This version accepts parameters as a dictionary for compatibility with
-    the RestingChainSolver.
+    This version accepts parameters as a dictionary for compatibility with the `RestingChainSolver`.
 
     Args:
         x: State vector containing positions and velocities
@@ -118,7 +117,7 @@ def create_discrete_casadi_dynamics(n_mass: int, dt: float) -> ca.Function:
 
     f_expl = define_f_expl_expr(x=x, u=u, p=p)
 
-    p_cat = ca.vertcat(*p.values())
+    p_cat = ca.vcat(p.values())
 
     disc_dyn_expr = integrate_erk4(
         f_expl,

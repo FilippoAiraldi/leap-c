@@ -22,13 +22,11 @@ class ChainControllerConfig:
 
     Attributes:
         N_horizon: The number of steps in the MPC horizon.
-            The MPC will have N+1 nodes (the nodes 0...N-1 and the terminal
-            node N).
-        T_horizon: The duration of the MPC horizon. One step during planning
-            will equal T_horizon/N_horizon simulation time.
+            The MPC will have `N+1` nodes (the nodes `0...N-1` and the terminal node `N`).
+        T_horizon: The duration of the MPC horizon. One step during planning will equal
+            `T_horizon / N_horizon` simulation time.
         n_mass: The number of masses in the chain.
-        param_interface: Determines the exposed paramete interface of the
-            controller.
+        param_interface: Determines the exposed paramete interface of the controller.
     """
 
     N_horizon: int = 20
@@ -38,16 +36,16 @@ class ChainControllerConfig:
 
 
 class ChainPlanner(AcadosPlanner):
-    """Acados-based controller for the hanging chain system.
-    The state and action correspond to the observation and action of the Chain environment.
-    The cost function takes the form of a weighted least-squares cost on the full state and action
-    and the dynamics correspond to the simulated ODE also found
-    in the Chain environment (using RK4). The inequality constraints
-    are box constraints on the action.
+    """Acados-based controller for the hanging `Chain` system.
+
+    The state and action correspond to the observation and action of the `Chain` environment. The
+    cost function takes the form of a weighted least-squares cost on the full state and action and
+    the dynamics correspond to the simulated ODE also found in the `Chain` environment (using RK4).
+    The inequality constraints are box constraints on the action.
 
     Attributes:
-        cfg: A configuration object containing high-level settings for the MPC problem,
-            such as horizon length.
+        cfg: A configuration object containing high-level settings for the MPC problem, such as
+            horizon length.
     """
 
     cfg: ChainControllerConfig
@@ -57,7 +55,7 @@ class ChainPlanner(AcadosPlanner):
         cfg: ChainControllerConfig | None = None,
         params: list[AcadosParameter] | None = None,
         export_directory: Path | None = None,
-    ):
+    ) -> None:
         """Initializes the ChainController.
 
         Args:
@@ -72,35 +70,23 @@ class ChainPlanner(AcadosPlanner):
         self.cfg = ChainControllerConfig() if cfg is None else cfg
         params = (
             create_chain_params(
-                self.cfg.param_interface,
-                self.cfg.n_mass,
-                N_horizon=self.cfg.N_horizon,
+                self.cfg.param_interface, self.cfg.n_mass, N_horizon=self.cfg.N_horizon
             )
             if params is None
             else params
         )
-
-        param_manager = AcadosParameterManager(
-            parameters=params,
-            N_horizon=self.cfg.N_horizon,  # type:ignore
-        )
-
-        fix_point = np.zeros(3)
+        param_manager = AcadosParameterManager(params, self.cfg.N_horizon)
 
         # find resting reference position
+        fix_point = np.zeros(3)
         rest_length = param_manager.parameters["L"].default[0]
         pos_last_mass_ref = fix_point + np.array([rest_length * (self.cfg.n_mass - 1), 0, 0])
 
         dyn_param_dict = {k: param_manager.parameters[k].default for k in "LDCmw"}
-
         resting_chain_solver = RestingChainSolver(
-            n_mass=self.cfg.n_mass,
-            f_expl=define_f_expl_expr,
-            **dyn_param_dict,
-            fix_point=fix_point,
+            n_mass=self.cfg.n_mass, f_expl=define_f_expl_expr, **dyn_param_dict, fix_point=fix_point
         )
-
-        x_ref, u_ref = resting_chain_solver(p_last=pos_last_mass_ref)
+        x_ref = resting_chain_solver(p_last=pos_last_mass_ref)[0]
 
         ocp = export_parametric_ocp(
             param_manager=param_manager,
@@ -110,12 +96,7 @@ class ChainPlanner(AcadosPlanner):
             T_horizon=self.cfg.T_horizon,
             n_mass=self.cfg.n_mass,
         )
-
-        initializer = ChainInitializer(ocp, x_ref=x_ref)
-
         diff_mpc = AcadosDiffMpcTorch(
-            ocp,
-            initializer=initializer,
-            export_directory=export_directory,
+            ocp, initializer=ChainInitializer(ocp, x_ref=x_ref), export_directory=export_directory
         )
         super().__init__(param_manager=param_manager, diff_mpc=diff_mpc)

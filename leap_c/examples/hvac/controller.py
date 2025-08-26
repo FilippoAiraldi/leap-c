@@ -7,6 +7,7 @@ import numpy as np
 import torch
 from acados_template import ACADOS_INFTY, AcadosOcp
 from scipy.constants import convert_temperature
+from torch import Tensor
 
 from leap_c.controller import ParameterizedController
 from leap_c.examples.hvac.config import make_default_hvac_params
@@ -21,8 +22,8 @@ class HvacControllerCtx(NamedTuple):
     """An extension of the AcadosDiffMpcCtx to also store the heater states."""
 
     diff_mpc_ctx: AcadosDiffMpcCtx
-    qh: torch.Tensor
-    dqh: torch.Tensor
+    qh: Tensor
+    dqh: Tensor
 
     @property
     def status(self):
@@ -39,39 +40,41 @@ class HvacControllerCtx(NamedTuple):
 
 class HvacController(ParameterizedController):
     """acados-based controller for the HVAC system.
+
     The first part of the state corresponds to the first part of the observation of the
-    StochasticThreeStateRcEnv environment, i.e., the indoor temperature Ti,
-    the radiator temperature Th, and the envelope temperature Te.
-    Appended to this state are the action "qh" from the environment
-    (the heating power of the radiator), and its derivative "dqh". Hence, the action of
-    this controller is "ddqh", the acceleration of the heating power.
+    `StochasticThreeStateRcEnv` environment, i.e., the indoor temperature `Ti`, the radiator
+    temperature `Th`, and the envelope temperature `Te`.
+    Appended to this state are the action `qh` from the environment (the heating power of the
+    radiator), and its derivative `dqh`. Hence, the action of this controller is `ddqh`, the
+    acceleration of the heating power.
 
     The cost function takes the form of
+    ```
         0.25 * price * qh
         + q_Ti * (ref_Ti - ocp.model.x[0]) ** 2
         + q_dqh * (dqh) ** 2
         + q_ddqh * (ddqh) ** 2,
-    i.e., a linear price term combined with weighted quadratic penalties on
-    the room temperature residuals, the rate of change of the heating power,
-    and the acceleration of the heating power.
+    ```
+    i.e., a linear price term combined with weighted quadratic penalties on the room temperature
+    residuals, the rate of change of the heating power, and the acceleration of the heating power.
 
     The dynamics correspond partly to the dynamics also found in the environment.
     The differences are:
     - The dynamics here do not include the noise.
-    - In case the ambient temperature, the solar radiation and the prices are not learned,
-    they are set to a default value, instead of the data being used.
-    - The action "qh" from the environment is part of the state here.
-    To make setting of the radiator heating power smoother,
-    a double integrator is added to the dynamics (hence, the action in this controller is ddqh,
-    the acceleration of the heating power).
+    - In case the ambient temperature, the solar radiation and the prices are not learned, they are
+    set to a default value, instead of the data being used.
+    - The action `qh` from the environment is part of the state here.
+    To make setting of the radiator heating power smoother, a double integrator is added to the
+    dynamics (hence, the action in this controller is `ddqh`, the acceleration of the heating
+    power).
 
-    The inequality constraints are box constraints on the room temperature
-    (comfort bounds, soft/slacked), and the heating power qh (hard).
+    The inequality constraints are box constraints on the room temperature (comfort bounds,
+    soft/slacked), and the heating power `qh` (hard).
 
     Attributes:
         param_manager: For managing the parameters of the OCP.
-        ocp: The AcadosOcp object representing the optimal control problem.
-        diff_mpc: The AcadosDiffMpcTorch object for solving the OCP and computing sensitivities.
+        ocp: The `AcadosOcp` object representing the optimal control problem.
+        diff_mpc: The `AcadosDiffMpcTorch` object for solving the OCP and computing sensitivities.
         stagewise: Whether to use stage-wise parameters.
         collate_fn_map: A mapping for collating contexts in batch processing.
     """
@@ -87,33 +90,23 @@ class HvacController(ParameterizedController):
         export_directory: Path | None = None,
     ) -> None:
         super().__init__()
-
         self.stagewise = stagewise
-
         self.param_manager = AcadosParameterManager(
-            parameters=params
-            or make_default_hvac_params(
-                stagewise=stagewise,
-                N_horizon=N_horizon,
-            ),
+            parameters=params or make_default_hvac_params(stagewise=stagewise, N_horizon=N_horizon),
             N_horizon=N_horizon,
         )
-
-        self.ocp = export_parametric_ocp(
-            param_manager=self.param_manager,
-            N_horizon=N_horizon,
-        )
+        self.ocp = export_parametric_ocp(param_manager=self.param_manager, N_horizon=N_horizon)
 
         if diff_mpc_kwargs is None:
             diff_mpc_kwargs = {}
-
         self.diff_mpc = AcadosDiffMpcTorch(
             self.ocp, **diff_mpc_kwargs, export_directory=export_directory
         )
 
-    def forward(self, obs, param: Any = None, ctx=None) -> tuple[Any, torch.Tensor]:
+    def forward(
+        self, obs: Tensor, param: Tensor | None = None, ctx: HvacControllerCtx | None = None
+    ) -> tuple[HvacControllerCtx, Tensor]:
         batch_size = obs.shape[0]
-
         if ctx is None:
             qh = torch.zeros((batch_size, 1), dtype=torch.float64, device=obs.device)
             dqh = torch.zeros((batch_size, 1), dtype=torch.float64, device=obs.device)
@@ -125,50 +118,30 @@ class HvacController(ParameterizedController):
                 qh = qh.unsqueeze(0)
             if dqh.ndim == 1:
                 dqh = dqh.unsqueeze(0)
-
             diff_mpc_ctx = ctx.diff_mpc_ctx
 
-        x0 = torch.cat(
-            [
-                obs[:, 2:5],
-                qh,
-                dqh,
-            ],
-            dim=1,
+        N = self.ocp.solver_options.N_horizon
+        obs0_np = obs[:, 0].numpy(force=True)
+        quarter_hours = np.asarray(
+            [np.arange(obs0_np[i], obs0_np[i] + N + 1) % N for i in range(batch_size)]
         )
-
-        N_horizon = self.ocp.solver_options.N_horizon
-        quarter_hours = np.array(
-            [
-                np.arange(obs[i, 0].cpu().numpy(), obs[i, 0].cpu().numpy() + N_horizon + 1)
-                % N_horizon
-                for i in range(batch_size)
-            ]
-        )
-
         lb, ub = set_temperature_limits(quarter_hours=quarter_hours)
 
-        # NOTE: In case we want to pass the data of exogenous influences to the controller,
-        # we can do it here
+        # NOTE: In case we want to pass the data of exogenous influences to the controller, we can
+        # do it here
         p_stagewise = self.param_manager.combine_non_learnable_parameter_values(
             lb_Ti=lb.reshape(batch_size, -1, 1),
             ub_Ti=ub.reshape(batch_size, -1, 1),
         )
 
+        x0 = torch.cat((obs[:, 2:5], qh, dqh), dim=1)
         diff_mpc_ctx, u0, x, u, value = self.diff_mpc(
-            x0,
-            p_global=param,
-            p_stagewise=p_stagewise,
-            ctx=diff_mpc_ctx,
+            x0, p_global=param, p_stagewise=p_stagewise, ctx=diff_mpc_ctx
         )
 
-        ctx = HvacControllerCtx(
-            diff_mpc_ctx,
-            qh=x[:, 1, 3].detach(),
-            dqh=x[:, 1, 4].detach(),
-        )
-
-        return ctx, x[:, 1, 3][:, None]
+        qh = x[:, 1, 3]
+        ctx = HvacControllerCtx(diff_mpc_ctx, qh=qh.detach(), dqh=x[:, 1, 4].detach())
+        return ctx, qh[:, None]
 
     def jacobian_action_param(self, ctx: HvacControllerCtx) -> np.ndarray:
         return self.diff_mpc.sensitivity(ctx.diff_mpc_ctx, field_name="du0_dp_global")
@@ -177,7 +150,7 @@ class HvacController(ParameterizedController):
     def param_space(self) -> gym.Space:
         return self.param_manager.get_param_space(dtype=np.float64)
 
-    def default_param(self, obs) -> np.ndarray | None:
+    def default_param(self, obs: np.ndarray | Tensor) -> np.ndarray | None:
         param = self.param_manager.learnable_parameters(
             self.param_manager.learnable_parameters_default.cat.full().flatten()
         )
@@ -185,14 +158,12 @@ class HvacController(ParameterizedController):
         if not self.stagewise:
             return param.cat.full().flatten()
 
-        Ta_forecast, solar_forecast, price_forecast = decompose_observation(obs)[5:]
-
-        if isinstance(Ta_forecast, torch.Tensor):
-            Ta_forecast = Ta_forecast.cpu().numpy().flatten()
-        if isinstance(solar_forecast, torch.Tensor):
-            solar_forecast = solar_forecast.cpu().numpy().flatten()
-        if isinstance(price_forecast, torch.Tensor):
-            price_forecast = price_forecast.cpu().numpy().flatten()
+        if isinstance(obs, Tensor):
+            obs = obs.numpy(force=True)
+        Ta_forecast, solar_forecast, price_forecast = decompose_observation(obs)[-3:]
+        Ta_forecast = Ta_forecast.flatten()
+        solar_forecast = solar_forecast.flatten()
+        price_forecast = price_forecast.flatten()
 
         for stage in range(self.ocp.solver_options.N_horizon + 1):
             param[f"Ta_{stage}_{stage}"] = Ta_forecast[stage]
@@ -207,13 +178,14 @@ class HvacController(ParameterizedController):
 
         Args:
             structured_param: The structured parameter object
-            key_prefix: The prefix to filter parameter keys (e.g., "Ta_", "Phi_s_", "price_")
+            key_prefix: The prefix to filter parameter keys (e.g., `"Ta_"`, `"Phi_s_"`, `"price_"`)
 
         Returns:
             np.ndarray: Vertically concatenated array of parameter values
         """
-        keys = [key for key in structured_param.keys() if key.startswith(key_prefix)]
-        return ca.vertcat(*[structured_param[key] for key in keys]).full()
+        return ca.vcat(
+            [structured_param[key] for key in structured_param.keys() if key.startswith(key_prefix)]
+        ).full()
 
 
 def export_parametric_ocp(
@@ -229,7 +201,7 @@ def export_parametric_ocp(
         param_manager: The parameter manager containing the parameters for the OCP.
         N_horizon: Number of time steps in the horizon.
         name: Name of the OCP model.
-        x0: Initial state. If None, a default value is used.
+        x0: Initial state. If `None`, a default value is used.
 
     Returns:
         AcadosOcp: The configured OCP object.
@@ -260,16 +232,7 @@ def export_parametric_ocp(
         Ed=np.zeros((3, 2)),
         dt=dt,
         params={
-            key: param_manager.get(key)
-            for key in [
-                "Ch",
-                "Ci",
-                "Ce",
-                "Rhi",
-                "Rie",
-                "Rea",
-                "gAw",
-            ]
+            key: param_manager.get(key) for key in ["Ch", "Ci", "Ce", "Rhi", "Rie", "Rea", "gAw"]
         },
     )
 
@@ -282,37 +245,33 @@ def export_parametric_ocp(
     # Augment the model with double integrator for the control input
     ocp.model.x = ca.vertcat(ocp.model.x, qh, dqh)
     ocp.model.disc_dyn_expr = ca.vertcat(
-        ocp.model.disc_dyn_expr,
-        qh + dt * dqh + 0.5 * dt**2 * ddqh,
-        dqh + dt * ddqh,
+        ocp.model.disc_dyn_expr, qh + dt * dqh + 0.5 * dt**2 * ddqh, dqh + dt * ddqh
     )
     ocp.model.u = ddqh
 
     # Cost function
-    ocp.cost.cost_type = "EXTERNAL"
-    ocp.model.cost_expr_ext_cost = (
+    cost = (
         0.25 * param_manager.get("price") * qh
         + param_manager.get("q_Ti") * (param_manager.get("ref_Ti") - ocp.model.x[0]) ** 2
         + param_manager.get("q_dqh") * (dqh) ** 2
-        + param_manager.get("q_ddqh") * (ddqh) ** 2
     )
+
+    ocp.cost.cost_type = "EXTERNAL"
+    ocp.model.cost_expr_ext_cost = cost + param_manager.get("q_ddqh") * (ddqh) ** 2
 
     ocp.cost.cost_type_e = "EXTERNAL"
-    ocp.model.cost_expr_ext_cost_e = (
-        0.25 * param_manager.get("price") * qh
-        + param_manager.get("q_Ti") * (param_manager.get("ref_Ti") - ocp.model.x[0]) ** 2
-        + param_manager.get("q_dqh") * (dqh) ** 2
-    )
+    ocp.model.cost_expr_ext_cost_e = cost
 
     # Constraints
-    ocp.constraints.x0 = x0 or np.array(
-        [convert_temperature(20.0, "celsius", "kelvin")] * 3 + [0.0, 0.0]
+    ocp.constraints.x0 = (
+        x0
+        if x0 is not None
+        else np.array([convert_temperature(20.0, "celsius", "kelvin")] * 3 + [0.0, 0.0])
     )
 
     # Comfort constraints
     ocp.model.con_h_expr = ca.vertcat(
-        ocp.model.x[0] - param_manager.get("lb_Ti"),
-        param_manager.get("ub_Ti") - ocp.model.x[0],
+        ocp.model.x[0] - param_manager.get("lb_Ti"), param_manager.get("ub_Ti") - ocp.model.x[0]
     )
     ocp.constraints.lh = np.array([0.0, 0.0])
     ocp.constraints.uh = np.array([ACADOS_INFTY, ACADOS_INFTY])
@@ -338,7 +297,7 @@ def export_parametric_ocp(
     return ocp
 
 
-def decompose_observation(obs: np.ndarray) -> tuple:
+def decompose_observation(obs: np.ndarray) -> tuple[np.ndarray, ...]:
     """
     Decompose the observation vector into its components.
 
@@ -356,67 +315,24 @@ def decompose_observation(obs: np.ndarray) -> tuple:
         - solar_forecast: Solar radiation forecast for the next N steps
         - price_forecast: Electricity price forecast for the next N steps
     """
-    if obs.ndim > 1:
-        N_forecast = (obs.shape[1] - 5) // 3
 
-        quarter_hour = obs[:, 0]
-        day_of_year = obs[:, 1]
-        Ti = obs[:, 2]
-        Th = obs[:, 3]
-        Te = obs[:, 4]
+    quarter_hour, day_of_year, Ti, Th, Te = np.moveaxis(obs[..., :5], -1, 0)
+    Ta_forecast, solar_forecast, price_forecast = np.split(obs[..., 5:], 3, -1)
 
-        Ta_forecast = obs[:, 5 : 5 + 1 * N_forecast]
-        solar_forecast = obs[:, 5 + 1 * N_forecast : 5 + 2 * N_forecast]
-        price_forecast = obs[:, 5 + 2 * N_forecast : 5 + 3 * N_forecast]
+    N_forecast = (obs.shape[-1] - 5) // 3
+    for forecast in (Ta_forecast, solar_forecast, price_forecast):
+        assert forecast.shape[-1] == N_forecast, (
+            f"Expected {N_forecast} forecasts, got {forecast.shape[1]}"
+        )
 
-        for forecast in [
-            Ta_forecast,
-            solar_forecast,
-            price_forecast,
-        ]:
-            assert forecast.shape[1] == N_forecast, (
-                f"Expected {N_forecast} forecasts, got {forecast.shape[1]}"
-            )
+    # Cast to appropriate types
+    # quarter_hour = quarter_hour.astype(np.int32)
+    # day_of_year = day_of_year.astype(np.int32)
+    # Ti = Ti.astype(np.float32)
+    # Th = Th.astype(np.float32)
+    # Te = Te.astype(np.float32)
+    # Ta_forecast = Ta_forecast.astype(np.float32)
+    # solar_forecast = solar_forecast.astype(np.float32)
+    # price_forecast = price_forecast.astype(np.float32)
 
-        # Cast to appropriate types
-        # quarter_hour = quarter_hour.astype(np.int32)
-        # day_of_year = day_of_year.astype(np.int32)
-        # Ti = Ti.astype(np.float32)
-        # Th = Th.astype(np.float32)
-        # Te = Te.astype(np.float32)
-        # Ta_forecast = Ta_forecast.astype(np.float32)
-        # solar_forecast = solar_forecast.astype(np.float32)
-        # price_forecast = price_forecast.astype(np.float32)
-
-    else:
-        N_forecast = (len(obs) - 5) // 3
-
-        quarter_hour = obs[0]
-        day_of_year = obs[1]
-        Ti = obs[2]
-        Th = obs[3]
-        Te = obs[4]
-
-        Ta_forecast = obs[5 : 5 + 1 * N_forecast]
-        solar_forecast = obs[5 + 1 * N_forecast : 5 + 2 * N_forecast]
-        price_forecast = obs[5 + 2 * N_forecast : 5 + 3 * N_forecast]
-
-        for forecast in [
-            Ta_forecast,
-            solar_forecast,
-            price_forecast,
-        ]:
-            assert len(forecast) == N_forecast, (
-                f"Expected {N_forecast} forecasts, got {len(forecast)}"
-            )
-
-    return (
-        quarter_hour,
-        day_of_year,
-        Ti,
-        Th,
-        Te,
-        Ta_forecast,
-        solar_forecast,
-        price_forecast,
-    )
+    return quarter_hour, day_of_year, Ti, Th, Te, Ta_forecast, solar_forecast, price_forecast

@@ -2,7 +2,7 @@
 
 from functools import partial
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypeAlias
 
 from gymnasium import Env
 
@@ -77,9 +77,7 @@ ExamplePlannerName = Literal[
 
 
 def create_planner(
-    planner_name: ExamplePlannerName,
-    reuse_code_base_dir: Path | None = None,
-    **kw: Any,
+    planner_name: ExamplePlannerName, reuse_code_base_dir: Path | None = None, **kw: Any
 ) -> ParameterizedPlanner:
     """Create a planner.
 
@@ -99,7 +97,7 @@ def create_planner(
         planner_class = PLANNER_REGISTRY[planner_name]
     else:
         planner_class, config_class, default_cfg_kwargs = PLANNER_REGISTRY[planner_name]
-        cfg = config_class(**{**default_cfg_kwargs, **kw})
+        cfg = config_class(**(default_cfg_kwargs | kw))
         kw = {"cfg": cfg}
 
     if reuse_code_base_dir is not None:
@@ -115,7 +113,7 @@ def create_planner(
 
 CONTROLLER_REGISTRY = {}
 # controllers are a superset of planners
-ExampleControllerName = Literal[*ExamplePlannerName.__args__]
+ExampleControllerName: TypeAlias = ExamplePlannerName
 
 
 def create_controller(
@@ -139,7 +137,7 @@ def create_controller(
         raise ValueError(f"Controller '{controller_name}' is not registered or does not exist.")
 
     controller_class, config_class, default_cfg_kwargs = CONTROLLER_REGISTRY[controller_name]
-    cfg = config_class(**{**default_cfg_kwargs, **kw})
+    cfg = config_class(**(default_cfg_kwargs | kw))
     kw = {"cfg": cfg}
 
     if reuse_code_base_dir is not None:

@@ -101,7 +101,7 @@ EXTRACTOR_REGISTRY = {
 }
 
 
-def get_extractor_cls(name: ExtractorName):
+def get_extractor_cls(name: ExtractorName) -> type[Extractor]:
     try:
         return EXTRACTOR_REGISTRY[name]
     except KeyError:

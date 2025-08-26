@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Generator, Generic, Literal, TypeVar, get_args
@@ -13,7 +14,6 @@ from leap_c.utils.gym import WrapperType, wrap_env
 from leap_c.utils.logger import Logger, LoggerConfig
 from leap_c.utils.rollout import episode_rollout
 
-TrainerConfigType = TypeVar("TrainerConfigType", bound="TrainerConfig")
 ValReportScoreOptions = Literal["cum", "final", "best"]
 
 
@@ -63,6 +63,9 @@ class TrainerConfig:
     log: LoggerConfig = field(default_factory=LoggerConfig)
 
 
+TrainerConfigType = TypeVar("TrainerConfigType", bound=TrainerConfig)
+
+
 @dataclass(kw_only=True)
 class TrainerState:
     """The state of a trainer.
@@ -97,7 +100,7 @@ class Trainer(ABC, torch.nn.Module, Generic[TrainerConfigType]):
     output_path: Path
     eval_env: gym.Env
     state: TrainerState
-    device: str
+    device: torch.device
     logger: Logger
 
     def __init__(
@@ -328,14 +331,14 @@ class Trainer(ABC, torch.nn.Module, Generic[TrainerConfigType]):
 
         return ckpt_dir / f"{self.state.step}_{name}.{suffix}"
 
-    def periodic_ckpt_modules(self) -> list[str]:
+    def periodic_ckpt_modules(self) -> Iterable[str]:
         """Returns the modules that should be checkpointed periodically.
 
         This is used for example for tracking policy parameters over time.
         """
         return []
 
-    def singleton_ckpt_modules(self) -> list[str]:
+    def singleton_ckpt_modules(self) -> Iterable[str]:
         """Returns the modules that should be checkpointed only once.
 
         Replay Buffers often should not be stored multiple times as there is overlap.

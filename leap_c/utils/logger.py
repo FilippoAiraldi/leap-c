@@ -158,7 +158,7 @@ class Logger:
         if cfg.wandb_logger:
             import wandb
 
-            if not cfg.wandb_init_kwargs.get("dir", False):  # type:ignore
+            if not cfg.wandb_init_kwargs.get("dir"):
                 cfg.wandb_init_kwargs["dir"] = str(self.output_path)
             wandb.init(**cfg.wandb_init_kwargs)
             self._wandb_defined_metrics: dict[str, bool] = {}
@@ -243,7 +243,7 @@ class Logger:
                 continue
 
             if value.size == 1:
-                stats[key] = float(value)
+                stats[key] = float(value.item())
                 continue
 
             assert value.ndim == 1, "Only 1D arrays are supported."
