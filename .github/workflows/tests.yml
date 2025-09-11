@@ -15,13 +15,13 @@ jobs:
 
 
     - name: Checkout leap-c
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5.0.0
       with:
         path: ${{github.workspace}}/leap_c
         submodules: 'recursive'
 
     - name: Download acados artifacts (build, lib, include) into acados repository
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v5.0.0
       with:
         path: ${{github.workspace}}/leap_c/external/acados
         repository: acados/acados
@@ -43,12 +43,12 @@ jobs:
         echo "LD_LIBRARY_PATH=${{github.workspace}}/leap_c/external/acados/lib" >> $GITHUB_ENV
 
     - name: Set up Python 3.11
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6.0.0
       with:
         python-version: "3.11"
 
     - name: Cache pip dependencies
-      uses: actions/cache@v4
+      uses: actions/cache@v4.2.4
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
@@ -73,9 +73,7 @@ jobs:
         pytest -vv -s --cov=leap_c --cov-report=xml --cov-report=term
 
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@v5.5.1
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
         files: coverage.xml
-
-
