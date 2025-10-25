@@ -182,11 +182,11 @@ class SquashedGaussian(BoundedDistribution):
             # reparameterization trick
             y = mean + std * torch.randn_like(mean)
 
-        log_prob = -0.5 * ((y - mean) / std).pow(2) - log_std - np.log(np.sqrt(2) * np.pi)
+        log_prob = -0.5 * ((y - mean) / std).square() - log_std - np.log(np.sqrt(2) * np.pi)
 
         y = torch.tanh(y)
 
-        log_prob -= torch.log(self.scale[None, :] * (1 - y.pow(2)) + 1e-6)
+        log_prob -= torch.log(self.scale[None, :] * (1 - y.square()) + 1e-6)
         log_prob = log_prob.sum(dim=-1, keepdim=True)
 
         y_scaled = y * self.scale[None, :] + self.loc[None, :]
