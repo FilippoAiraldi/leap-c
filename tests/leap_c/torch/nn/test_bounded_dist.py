@@ -1,11 +1,13 @@
+from functools import partial
+
 import numpy as np
 import torch
 from gymnasium import spaces
 
-from leap_c.torch.nn.bounded_distributions import ScaledBeta
+from leap_c.torch.nn.bounded_distributions import ScaledBeta, asymmetric_tanh_squash
 
 
-def test_scaled_beta():
+def test_scaled_beta() -> None:
     """Sanity checks for the ScaledBeta distribution."""
 
     test_space = spaces.Box(
@@ -68,3 +70,30 @@ def test_scaled_beta():
     mode_log_prob.sum().backward()
     assert alpha.grad is not None and not torch.any(torch.isnan(alpha.grad))
     assert beta.grad is not None and not torch.any(torch.isnan(beta.grad))
+
+
+def test_asymmetric_tanh_squash() -> None:
+    """Check the output of `asymmetric_tanh_squash` falls between bounds and maps zeroes to
+    `default` values."""
+    device = torch.device("cpu")
+    dtype = torch.float64
+    test_close = partial(torch.testing.assert_close, rtol=1e-5, atol=1e-5)
+
+    ndim = torch.randint(1, 10, (1,)).item()
+    low = torch.rand(ndim, dtype=dtype, device=device) * -20.0
+    high = torch.rand(ndim, dtype=dtype, device=device) * 20.0 + 1.0
+    default = torch.rand(ndim, dtype=dtype, device=device) * (high - low) + low
+
+    # test within bounds
+    n_samples = 1_000
+    x = 100.0 * torch.randn(n_samples, ndim, dtype=dtype, device=device)
+    y = asymmetric_tanh_squash(x, low, high, default)
+    assert y.shape == x.shape
+    assert y.isfinite().all()
+    test_close((low - y).clamp_min(0).max().item(), 0.0)
+    test_close((y - high).clamp_min(0).max().item(), 0.0)
+
+    # test zero maps to default
+    x_zero = torch.zeros(ndim, dtype=dtype, device=device)
+    y_zero = asymmetric_tanh_squash(x_zero, low, high, default)
+    test_close(y_zero, default)
