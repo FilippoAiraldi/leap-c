@@ -1,27 +1,35 @@
 """Provides a simple Gaussian layer that allows policies to respect action bounds."""
 
 from abc import abstractmethod
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 import torch
 import torch.nn as nn
-from gymnasium import spaces
+from gymnasium.spaces import Box
 from torch.distributions.beta import Beta
 
 BoundedDistributionName = Literal["squashed_gaussian", "scaled_beta"]
 
 
-def get_bounded_distribution(name: BoundedDistributionName, **init_kwargs) -> "BoundedDistribution":
-    if name == "squashed_gaussian":
-        return SquashedGaussian(**init_kwargs)
-    elif name == "scaled_beta":
-        return ScaledBeta(**init_kwargs)
-    raise ValueError(f"Unknown bounded distribution: {name}")
-
-
 class BoundedDistribution(nn.Module):
     """An abstract class for bounded distributions."""
+
+    space: Box
+
+    def __init__(self, space: Box) -> None:
+        """Initializes the bounded distribution.
+
+        Args:
+            space: The space the output is bounded to.
+
+        Raises:
+            ValueError: If the provided space is not bounded.
+        """
+        if not space.bounded_below.all() or not space.bounded_above.all():
+            raise ValueError("The provided space must be bounded to support scaling and shifting.")
+        super().__init__()
+        self.space = space
 
     @abstractmethod
     def forward(
@@ -29,11 +37,10 @@ class BoundedDistribution(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor, dict[str, float]]:
         """Sample from the distribution.
 
-        If `deterministic` is True, the mode of the distribution is used instead of
-        sampling.
+        If `deterministic` is True, the mode of the distribution is used instead of sampling.
 
         Returns:
-            A tuple containing the samples, their log_prob and a dictionary of stats.
+            A tuple containing the samples, their log probability, and a dictionary of stats.
         """
         ...
 
@@ -45,8 +52,8 @@ class BoundedDistribution(nn.Module):
             output_dim: The dimensionality of the output space (e.g., action space).
 
         Returns:
-            A tuple of integers, each integer specifying the size of one
-            parameter required to define the distribution in the forward pass.
+            A tuple of integers, each integer specifying the size of one parameter required to
+            define the distribution in the forward pass.
         """
         ...
 
@@ -63,12 +70,34 @@ class BoundedDistribution(nn.Module):
         ...
 
 
+def get_bounded_distribution(name: BoundedDistributionName, **kwargs: Any) -> BoundedDistribution:
+    """Create an instance of a bounded distribution by name.
+
+    Args:
+        name ({"squashed_gaussian", "scaled_beta"}): The name of the bounded distribution
+        kwargs: Additional keyword arguments passed to the constructor of the bounded distribution.
+
+    Returns:
+        BoundedDistribution: The newly created instance.
+
+    Raises:
+        ValueError: If the provided name does not correspond to a known bounded distribution.
+    """
+    match name:
+        case "squashed_gaussian":
+            return SquashedGaussian(**kwargs)
+        case "scaled_beta":
+            return ScaledBeta(**kwargs)
+        case _:
+            raise ValueError(f"Unknown bounded distribution: {name}")
+
+
 class SquashedGaussian(BoundedDistribution):
     """A squashed Gaussian.
 
-    Samples the output from a Gaussian distribution specified by the input,
-    and then squashes the result with a tanh function.
-    Finally, the output of the tanh function is scaled and shifted to match the space.
+    Samples the output from a Gaussian distribution specified by the input, and then squashes the
+    result with a tanh function. Finally, the output of the tanh function is scaled and shifted to
+    match the space.
 
     Can for example be used to enforce certain action bounds of a stochastic policy.
 
@@ -81,29 +110,27 @@ class SquashedGaussian(BoundedDistribution):
     loc: torch.Tensor
     log_std_min: float
     log_std_max: float
+    padding: float
 
     def __init__(
-        self,
-        space: spaces.Box,
-        log_std_min: float = -4,
-        log_std_max: float = 2.0,
-        padding: float = 0.0001,
-    ):
+        self, space: Box, log_std_min: float = -4, log_std_max: float = 2.0, padding: float = 1e-4
+    ) -> None:
         """Initializes the SquashedGaussian module.
 
         Args:
             space: Space the output should fit to.
             log_std_min: The minimum value for the logarithm of the standard deviation.
             log_std_max: The maximum value for the logarithm of the standard deviation.
-            padding: The amount of padding to distance the action of the bounds, when
-                using the inverse transformation for the anchoring. This improves numerical
-                stability.
+            padding: The amount of padding to distance the action of the bounds, when using the
+                inverse transformation for the anchoring. This improves numerical stability.
+
+        Raises:
+            ValueError: If the provided space is not bounded.
         """
-        super().__init__()
+        super().__init__(space)
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max
         self.padding = padding
-        self.space = space
 
         loc = (space.high + space.low) / 2.0
         scale = (space.high - space.low) / 2.0
@@ -125,17 +152,17 @@ class SquashedGaussian(BoundedDistribution):
 
         Args:
             mean: The mean of the normal distribution.
-            log_std: The logarithm of the standard deviation of the normal distribution,
-                of the same shape as the mean (i.e., assuming independent dimensions).
+            log_std: The logarithm of the standard deviation of the normal distribution, of the same
+                shape as the mean (i.e., assuming independent dimensions).
                 Will be clamped according to the attributes of this class.
-                If None, the output is deterministic (no noise added to mean).
+                If `None`, the output is deterministic (no noise added to mean).
             deterministic: If True, the output will just be spacefitting(tanh(mean)),
                 no sampling is taking place.
             anchor: Anchor point to shift the mean. Used for residual policies.
 
         Returns:
-            An output sampled from the SquashedGaussian, the log probability of this output
-            and a statistics dict containing the standard deviation.
+            An output sampled from the `SquashedGaussian`, the log probability of this output, and a
+            statistics dict containing the standard deviation.
         """
         if log_std is not None:
             log_std = torch.clamp(log_std, self.log_std_min, self.log_std_max)
@@ -167,10 +194,10 @@ class SquashedGaussian(BoundedDistribution):
 
         y = torch.tanh(y)
 
-        log_prob -= torch.log(self.scale[None, :] * (1 - y.square()) + 1e-6)
+        log_prob -= torch.log(self.scale * (1.0 - y.square()) + 1e-6)
         log_prob = log_prob.sum(dim=-1, keepdim=True)
 
-        y_scaled = y * self.scale[None, :] + self.loc[None, :]
+        y_scaled = y * self.scale + self.loc
 
         stats = (
             {"gaussian_unsquashed_std": std.prod(dim=-1).mean().item()} if std is not None else {}
@@ -185,8 +212,8 @@ class SquashedGaussian(BoundedDistribution):
         """Apply the inverse transformation to the input tensor.
 
         The inverse transformation is a descale and then arctanh.
-        For numerical stability, the input is slightly padded away from the bounds
-        before applying arctanh.
+        For numerical stability, the input is slightly padded away from the bounds before applying
+        arctanh.
 
         Args:
             x: The input tensor.
@@ -194,22 +221,21 @@ class SquashedGaussian(BoundedDistribution):
         Returns:
             The inverse squashed tensor, scaled and shifted to match the action space.
         """
-        abs_padding = self.scale[None, :] * self.padding
-        x = (x - self.loc[None, :]) / (self.scale[None, :] + 2 * abs_padding)
-        return torch.arctanh(x)
+        abs_padding = self.scale * self.padding
+        y = (x - self.loc) / (self.scale + 2.0 * abs_padding)
+        return torch.arctanh(y)
 
 
 class ScaledBeta(BoundedDistribution):
     """A unimodal scaled Beta distribution.
 
-    Samples the output from a Beta distribution specified by the input,
-    and then scales and shifts the result to match the space. Unomodality is ensured
-    by enforcing alpha, beta > 1.
+    Samples the output from a Beta distribution specified by the input, and then scales and shifts
+    the result to match the space. Unomodality is ensured by enforcing `alpha, beta > 1`.
 
     Can for example be used to enforce certain action bounds of a stochastic policy.
 
     Attributes:
-        scale: The scale of the space-fitting transform.
+        scale: The scale of the space-fitting transform (for scaling).
         loc: The location of the space-fitting transform (for shifting).
         log_alpha_min: The minimum value for the logarithm of the alpha parameter.
         log_beta_min: The minimum value for the logarithm of the beta parameter.
@@ -226,13 +252,13 @@ class ScaledBeta(BoundedDistribution):
 
     def __init__(
         self,
-        space: spaces.Box,
+        space: Box,
         log_alpha_min: float = -10.0,
         log_beta_min: float = -10.0,
         log_alpha_max: float = 10.0,
         log_beta_max: float = 10.0,
-    ):
-        """Initializes the ScaledBeta module.
+    ) -> None:
+        """Initializes the `ScaledBeta` module.
 
         Args:
             space: Space the output should fit to.
@@ -240,8 +266,11 @@ class ScaledBeta(BoundedDistribution):
             log_beta_min: The minimum value for the logarithm of the beta parameter.
             log_alpha_max: The maximum value for the logarithm of the alpha parameter.
             log_beta_max: The maximum value for the logarithm of the beta parameter.
+
+        Raises:
+            ValueError: If the provided space is not bounded.
         """
-        super().__init__()
+        super().__init__(space)
 
         self.log_alpha_max = log_alpha_max
         self.log_beta_max = log_beta_max
@@ -266,18 +295,18 @@ class ScaledBeta(BoundedDistribution):
     ) -> tuple[torch.Tensor, torch.Tensor, dict[str, float]]:
         """Sample from the ScaledBeta distribution.
 
-        Note that alpha and beta are enforced to be > 1 to ensure concavity.
+        Note that alpha and beta are enforced to be `> 1` to ensure concavity.
 
         Args:
             log_alpha: The logarithm of the alpha parameter of the Beta distribution.
             log_beta: The logarithm of the beta parameter of the Beta distribution.
-            deterministic: If True, the output will just be spacefitting(mode),
-                no sampling is taking place.
+            deterministic: If `True`, the output will just be spacefitting(mode); no sampling is
+                taking place.
             anchor: If provided, the Beta distribution's mode is centered around this anchor point.
                 This is useful for action noise where the MPC output serves as the anchor.
 
         Returns:
-            An output sampled from the ScaledBeta distribution, the log probability of this output
+            An output sampled from the ScaledBeta distribution, the log probability of this output,
             and a statistics dict containing the standard deviation.
         """
         log_alpha = torch.clamp(log_alpha, self.log_alpha_min, self.log_alpha_max)
@@ -296,19 +325,18 @@ class ScaledBeta(BoundedDistribution):
             y = dist.rsample()
         log_prob = dist.log_prob(y)
 
-        y_scaled = y * self.scale[None, :] + self.loc[None, :]
+        y_scaled = y * self.scale + self.loc
 
         # If anchor is provided, center the distribution around it
         if anchor is not None:
             # TODO (Jasper): Check whether we want to do it differently?
-            raise NotImplementedError("Anchor functionality not implemented for ScaledBeta yet.")
+            raise NotImplementedError("Anchor functionality not implemented for `ScaledBeta` yet.")
 
-        log_prob -= torch.log(self.scale[None, :])
+        log_prob -= torch.log(self.scale)
         log_prob = log_prob.sum(dim=-1, keepdim=True)
 
-        # We could return the mean of alpha and beta as stats,
-        # but I think they should at least be investigated for each action
-        # dimension independently
+        # We could return the mean of alpha and beta as stats, but I think they should at least be
+        # investigated for each action dimension independently
         return y_scaled, log_prob, {}
 
     def parameter_size(self, output_dim: int) -> tuple[int, ...]:
