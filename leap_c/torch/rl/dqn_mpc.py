@@ -23,9 +23,9 @@ from torch.nn.functional import mse_loss
 
 from leap_c.controller import ParameterizedController
 from leap_c.ocp.acados.diff_mpc import AcadosDiffMpcCtx
-from leap_c.torch.nn.bounded_distributions import asymmetric_tanh_squash
+from leap_c.torch.nn.bounded_distributions import BoundedTransform
 from leap_c.torch.nn.extractor import Extractor, ExtractorName, get_extractor_cls
-from leap_c.torch.nn.mlp import Mlp, MlpConfig
+from leap_c.torch.nn.mlp import Mlp, MlpConfig, init_mlp_params_with_inverse_default
 from leap_c.torch.rl.buffer import ReplayBuffer
 from leap_c.torch.rl.dqn import DqnTrainerConfig, _linear_schedule
 from leap_c.torch.rl.utils import soft_target_update
@@ -39,10 +39,16 @@ class DqnMpcTrainerConfig(DqnTrainerConfig):
     """Specific settings for the DQN-MPC trainer.
 
     Attributes:
+        init_param_with_default: Whether to initialize the learnable MPC parameters such that their
+            values, when mapped to the parameter space (see `DqnMpcAgent.param_transform`),
+            correspond to the default parameters of the MPC controller (see
+            `DqnMpcAgent.controller.default_param`). Only valid in case no MLP is used (e.g.,
+            `DqnMpcTrainerConfig.critic_mlp.hidden_dims is None`).
         num_threads_batch_solver: Number of threads to be used by the batched acados solver. The
             number of required batches will be at most `DqnTrainerConfig.batch_size`.
     """
 
+    init_param_with_default: bool = True
     num_threads_batch_solver: int = 2**3
 
 
@@ -87,14 +93,21 @@ class DqnMpcAgent(nn.Module):
         extractor: A feature extractor for the observations.
         mlp: A Multi-Layer Perceptron (MLP) to provide estimates for the MPC parameters.
         controller: The differentiable parameterized MPC controller used in the agent.
+        parameter_transform: Transform that maps the MLP (unbounded) outputs to the space of valid
+            controller parameters.
     """
 
     extractor: Extractor
     mlp: Mlp
     controller: ParameterizedController
+    parameter_transform: BoundedTransform
 
     def __init__(
-        self, extractor: Extractor, mlp_cfg: MlpConfig, controller: ParameterizedController
+        self,
+        extractor: Extractor,
+        mlp_cfg: MlpConfig,
+        controller: ParameterizedController,
+        init_param_with_default: bool = True,
     ) -> None:
         f"""Initializes the DQN-MPC agent.
 
@@ -102,19 +115,22 @@ class DqnMpcAgent(nn.Module):
             extractor: The extractor that returns features from observations.
             mlp_cfg: The configuration for the MLP.
             controller: The differentiable parameterized controller to be used.
+            init_param_with_default: Whether to initialize the learnable MPC parameters such that
+                their values, when mapped to the parameter space (see
+                `DqnMpcAgent.param_transform`), correspond to the default parameters of the MPC
+                controller (see `controller.default_param`). Only valid in case no MLP is used
+                (e.g., `mlp_cfg.hidden_dims is None`).
 
         Raises:
-            ValueError: If the controller's parameter space is not a 1D bounded `{Box.__name__}`
-                space.
+            ValueError: If the controller's parameter space is not a bounded `{Box.__name__}` space.
         """
         if (
             not isinstance(space := controller.param_space, Box)
-            or len(space.shape) != 1
             or not space.bounded_above.all()
             or not space.bounded_below.all()
         ):
             raise ValueError(
-                f"`{self.__class__.__name__}` only supports 1D bounded `{Box.__name__}` parameter "
+                f"`{self.__class__.__name__}` only supports bounded `{Box.__name__}` parameter "
                 "spaces."
             )
         super().__init__()
@@ -124,18 +140,14 @@ class DqnMpcAgent(nn.Module):
         self.mlp = Mlp(
             input_sizes=extractor.output_size, output_sizes=space.shape[0], mlp_cfg=mlp_cfg
         )
-        self.register_buffer("_param_low", torch.from_numpy(space.low))
-        self.register_buffer("_param_high", torch.from_numpy(space.high))
+        self.parameter_transform = BoundedTransform(controller.param_space)
+        if init_param_with_default:
+            init_mlp_params_with_inverse_default(self.mlp, self.parameter_transform, controller)
 
     def forward(
         self, obs: Tensor, action: Tensor | None = None, ctx: AcadosDiffMpcCtx | None = None
     ) -> DqnMpcAgentOutput:
-        param = asymmetric_tanh_squash(
-            self.mlp(self.extractor(obs)),
-            self._param_low,
-            self._param_high,
-            torch.as_tensor(self.controller.default_param(obs), dtype=obs.dtype, device=obs.device),
-        )
+        param = self.parameter_transform(self.mlp(self.extractor(obs)))
         ctx, action, value = self.controller(obs, param, action, ctx)
         return DqnMpcAgentOutput(param, action, value, ctx)
 
@@ -150,6 +162,7 @@ class DqnMpcTrainer(Trainer[DqnMpcTrainerConfig]):
         q_target (DqnMpcAgent): The target agent (critic and policy approximator).
         optim (torch.optim.Optimizer): The optimizer for the agent.
         buffer (ReplayBuffer): The replay buffer used for storing and sampling experiences.
+        action_space (Box): Bounded action space of the environment the agent is trained on.
     """
 
     train_env: Env
@@ -157,6 +170,7 @@ class DqnMpcTrainer(Trainer[DqnMpcTrainerConfig]):
     q_target: DqnMpcAgent
     optim: torch.optim.Optimizer
     buffer: ReplayBuffer
+    action_space: Box
 
     def __init__(
         self,
@@ -168,7 +182,7 @@ class DqnMpcTrainer(Trainer[DqnMpcTrainerConfig]):
         device: int | str | torch.device,
         extractor_cls: type[Extractor] | ExtractorName = "identity",
     ) -> None:
-        """Initializes the DQN-MPC trainer.
+        f"""Initializes the DQN-MPC trainer.
 
         Args:
             cfg (DqnMpcTrainerConfig): The configuration for the trainer.
@@ -180,16 +194,38 @@ class DqnMpcTrainer(Trainer[DqnMpcTrainerConfig]):
             device (int, str or torch.device): The device on which the trainer is running.
             extractor_cls (Extractor type or {"identity", "scaling"}): The class used for extracting
                 features from observations.
+
+        Raises:
+            ValueError: If `train_env`'s action space space is not a bounded `{Box.__name__}` space.
         """
+        if (
+            not isinstance(action_space := train_env.action_space, Box)
+            or not action_space.bounded_above.all()
+            or not action_space.bounded_below.all()
+        ):
+            raise ValueError(
+                f"`{self.__class__.__name__}` only supports bounded `{Box.__name__}` action spaces."
+            )
         super().__init__(cfg, eval_env, output_path, device)
 
         observation_space = train_env.observation_space
+        self.action_space = action_space
         self.train_env = wrap_env(train_env)
         if isinstance(extractor_cls, str):
             extractor_cls = get_extractor_cls(extractor_cls)
 
-        self.q = DqnMpcAgent(extractor_cls(observation_space), cfg.critic_mlp, controller)
-        self.q_target = DqnMpcAgent(extractor_cls(observation_space), cfg.critic_mlp, controller)
+        self.q = DqnMpcAgent(
+            extractor_cls(observation_space),
+            cfg.critic_mlp,
+            controller,
+            cfg.init_param_with_default,
+        )
+        self.q_target = DqnMpcAgent(
+            extractor_cls(observation_space),
+            cfg.critic_mlp,
+            controller,
+            cfg.init_param_with_default,
+        )
         self.q_target.load_state_dict(self.q.state_dict())
         self.optim = torch.optim.Adam(self.q.parameters(), lr=cfg.lr)
         self.buffer = ReplayBuffer(
@@ -233,7 +269,8 @@ class DqnMpcTrainer(Trainer[DqnMpcTrainerConfig]):
                 self.state.step,
             )
         ):
-            action = self.train_env.action_space.sample()
+            space = self.action_space
+            action = self.rng.uniform(space.low, space.high, size=space.shape)
             ctx = state  # pass through previous context
             stats = {"epsilon": epsilon}
 

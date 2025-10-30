@@ -58,6 +58,7 @@ def create_cfg(env: str, controller: str, seed: int) -> RunDqnMpcConfig:
     cfg.trainer.start_exploration = 1.0
     cfg.trainer.end_exploration = 0.05
     cfg.trainer.exploration_fraction = 0.5
+    cfg.trainer.init_param_with_default = True
     cfg.trainer.num_threads_batch_solver = 2**2  # NOTE: adjust based on available compute
 
     # ---- Section: cfg.trainer.critic_mlp ----
