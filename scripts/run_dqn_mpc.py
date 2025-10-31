@@ -36,8 +36,8 @@ def create_cfg(env: str, controller: str, seed: int) -> RunDqnMpcConfig:
 
     # ---- Section: cfg.trainer (base) ----
     cfg.trainer.seed = seed
-    cfg.trainer.train_steps = 500_000
-    cfg.trainer.train_start = 10_000
+    cfg.trainer.train_steps = 200_000
+    cfg.trainer.train_start = 20_000
     cfg.trainer.val_freq = 10_000
     cfg.trainer.val_num_rollouts = 20
     cfg.trainer.val_deterministic = True
@@ -48,12 +48,12 @@ def create_cfg(env: str, controller: str, seed: int) -> RunDqnMpcConfig:
 
     # ---- Section: cfg.trainer (DQN-MPC) ----
     cfg.trainer.batch_size = 128
-    cfg.trainer.buffer_size = 10_000
+    cfg.trainer.buffer_size = 100_000
     cfg.trainer.gamma = 0.99
-    cfg.trainer.lr = 2.5e-4
-    cfg.trainer.update_freq = 10
-    cfg.trainer.soft_update_freq = 500
-    cfg.trainer.tau = 1.0
+    cfg.trainer.lr = 3e-5
+    cfg.trainer.update_freq = 4
+    cfg.trainer.soft_update_freq = 1
+    cfg.trainer.tau = 5e-3
     cfg.trainer.gradient_steps = 1
     cfg.trainer.start_exploration = 1.0
     cfg.trainer.end_exploration = 0.05

@@ -40,9 +40,9 @@ class DqnMpcTrainerConfig(DqnTrainerConfig):
 
     Attributes:
         init_param_with_default: Whether to initialize the learnable MPC parameters such that their
-            values, when mapped to the parameter space (see `DqnMpcAgent.param_transform`),
+            values, when mapped to the parameter space (see `DqnMpcCritic.param_transform`),
             correspond to the default parameters of the MPC controller (see
-            `DqnMpcAgent.controller.default_param`). Only valid in case no MLP is used (e.g.,
+            `DqnMpcCritic.controller.default_param`). Only valid in case no MLP is used (e.g.,
             `DqnMpcTrainerConfig.critic_mlp.hidden_dims is None`).
         num_threads_batch_solver: Number of threads to be used by the batched acados solver. The
             number of required batches will be at most `DqnTrainerConfig.batch_size`.
@@ -52,8 +52,8 @@ class DqnMpcTrainerConfig(DqnTrainerConfig):
     num_threads_batch_solver: int = 2**3
 
 
-class DqnMpcAgentOutput(NamedTuple):
-    """Output of the DQN-MPC agent.
+class DqnMpcCriticOutput(NamedTuple):
+    """Output of the DQN-MPC critic.
 
     Attributes:
         param: The estimated parameters for which the MPC was solved.
@@ -86,13 +86,15 @@ class DqnMpcAgentOutput(NamedTuple):
         return self.ctx.log or {}
 
 
-class DqnMpcAgent(nn.Module):
-    """An agent for DQN-MPC, acting both as a critic and as a policy provider.
+class DqnMpcCritic(nn.Module):
+    """The critic for the DQN-MPC algorithm.
+
+    Technically speaking, it acts both as a critic and as a policy provider.
 
     Attributes:
         extractor: A feature extractor for the observations.
         mlp: A Multi-Layer Perceptron (MLP) to provide estimates for the MPC parameters.
-        controller: The differentiable parameterized MPC controller used in the agent.
+        controller: The differentiable parameterized MPC controller used in the critic.
         parameter_transform: Transform that maps the MLP (unbounded) outputs to the space of valid
             controller parameters.
     """
@@ -109,7 +111,7 @@ class DqnMpcAgent(nn.Module):
         controller: ParameterizedController,
         init_param_with_default: bool = True,
     ) -> None:
-        f"""Initializes the DQN-MPC agent.
+        f"""Initializes the DQN-MPC critic.
 
         Args:
             extractor: The extractor that returns features from observations.
@@ -117,7 +119,7 @@ class DqnMpcAgent(nn.Module):
             controller: The differentiable parameterized controller to be used.
             init_param_with_default: Whether to initialize the learnable MPC parameters such that
                 their values, when mapped to the parameter space (see
-                `DqnMpcAgent.param_transform`), correspond to the default parameters of the MPC
+                `DqnMpcCritic.param_transform`), correspond to the default parameters of the MPC
                 controller (see `controller.default_param`). Only valid in case no MLP is used
                 (e.g., `mlp_cfg.hidden_dims is None`).
 
@@ -146,10 +148,10 @@ class DqnMpcAgent(nn.Module):
 
     def forward(
         self, obs: Tensor, action: Tensor | None = None, ctx: AcadosDiffMpcCtx | None = None
-    ) -> DqnMpcAgentOutput:
+    ) -> DqnMpcCriticOutput:
         param = self.parameter_transform(self.mlp(self.extractor(obs)))
         ctx, action, value = self.controller(obs, param, action, ctx)
-        return DqnMpcAgentOutput(param, action, value, ctx)
+        return DqnMpcCriticOutput(param, action, value, ctx)
 
 
 class DqnMpcTrainer(Trainer[DqnMpcTrainerConfig]):
@@ -158,16 +160,16 @@ class DqnMpcTrainer(Trainer[DqnMpcTrainerConfig]):
 
     Attributes:
         train_env (Env): The training environment.
-        q (DqnMpcAgent): The agent (critic and policy approximator).
-        q_target (DqnMpcAgent): The target agent (critic and policy approximator).
-        optim (torch.optim.Optimizer): The optimizer for the agent.
+        q (DqnMpcCritic): The critic.
+        q_target (DqnMpcCritic): The target critic.
+        optim (torch.optim.Optimizer): Optimizer for the critic.
         buffer (ReplayBuffer): The replay buffer used for storing and sampling experiences.
-        action_space (Box): Bounded action space of the environment the agent is trained on.
+        action_space (Box): Bounded action space of the environment the critic is trained on.
     """
 
     train_env: Env
-    q: DqnMpcAgent
-    q_target: DqnMpcAgent
+    q: DqnMpcCritic
+    q_target: DqnMpcCritic
     optim: torch.optim.Optimizer
     buffer: ReplayBuffer
     action_space: Box
@@ -208,23 +210,15 @@ class DqnMpcTrainer(Trainer[DqnMpcTrainerConfig]):
             )
         super().__init__(cfg, eval_env, output_path, device)
 
-        observation_space = train_env.observation_space
-        self.action_space = action_space
         self.train_env = wrap_env(train_env)
         if isinstance(extractor_cls, str):
             extractor_cls = get_extractor_cls(extractor_cls)
+        extractor = extractor_cls(train_env.observation_space)
+        self.action_space = action_space
 
-        self.q = DqnMpcAgent(
-            extractor_cls(observation_space),
-            cfg.critic_mlp,
-            controller,
-            cfg.init_param_with_default,
-        )
-        self.q_target = DqnMpcAgent(
-            extractor_cls(observation_space),
-            cfg.critic_mlp,
-            controller,
-            cfg.init_param_with_default,
+        self.q = DqnMpcCritic(extractor, cfg.critic_mlp, controller, cfg.init_param_with_default)
+        self.q_target = DqnMpcCritic(
+            extractor, cfg.critic_mlp, controller, cfg.init_param_with_default
         )
         self.q_target.load_state_dict(self.q.state_dict())
         self.optim = torch.optim.Adam(self.q.parameters(), lr=cfg.lr)
@@ -276,7 +270,7 @@ class DqnMpcTrainer(Trainer[DqnMpcTrainerConfig]):
 
         else:
             with torch.inference_mode():
-                output: DqnMpcAgentOutput = self.q(self.buffer.collate((obs,)), None, state)
+                output: DqnMpcCriticOutput = self.q(self.buffer.collate((obs,)), None, state)
             action = output.action.squeeze(0).numpy(force=True).astype(obs.dtype, copy=False)
             ctx = output.ctx
             stats = output.stats
@@ -342,7 +336,7 @@ class DqnMpcTrainer(Trainer[DqnMpcTrainerConfig]):
             cost = r.neg()
 
             # compute samples of current action value distribution
-            output: DqnMpcAgentOutput = self.q(obs, act, ctx)
+            output: DqnMpcCriticOutput = self.q(obs, act, ctx)
             q_ok = torch.as_tensor(output.status, dtype=dtype, device=device) == 0.0
 
             # remove batch entries where the action-value MPC failed by masking via `q_ok` - does
@@ -358,12 +352,10 @@ class DqnMpcTrainer(Trainer[DqnMpcTrainerConfig]):
 
             # compute target - solve state-value MPC only for the remaining non-terminal next states
             target = cost.clone()
-            if (nonterminated := (terminated == 0.0)).any():
+            if (nonterm := (terminated == 0.0)).any():
                 # compute the state value function at next state (only for remaining non-terminal)
                 with torch.inference_mode():
-                    output_next: DqnMpcAgentOutput = self.q_target(
-                        obs_next[nonterminated], None, output.ctx
-                    )
+                    output_next: DqnMpcCriticOutput = self.q_target(obs_next[nonterm], None, ctx)
                 v_ok = torch.as_tensor(output_next.status, dtype=dtype, device=device) == 0.0
 
                 # remove batch entries where the state-value MPC failed by masking via `v_ok`
@@ -374,12 +366,12 @@ class DqnMpcTrainer(Trainer[DqnMpcTrainerConfig]):
 
                 # finally, compute the target as cost + gamma * V(s') only for those non-terminal
                 # batch entries for which both Q(s,a) and V(s') succeeded
-                keep = torch.full(nonterminated.shape, True, dtype=torch.bool, device=device)
-                keep[nonterminated] = v_ok  # flags entries with V ok (Q was already handled above)
+                keep = torch.full(nonterm.shape, True, dtype=torch.bool, device=device)
+                keep[nonterm] = v_ok  # flags entries with V ok (Q was already handled above)
                 target = target[keep]  # contains terminal as well as non-terminal (with V ok)
                 estimate = estimate[keep]  # same as above
-                nonterminated = nonterminated[keep]  # among V ok, discerns which are non-terminal
-                target[nonterminated] += self.cfg.gamma * estimate_next
+                nonterm = nonterm[keep]  # among V ok, discerns which are non-terminal
+                target[nonterm] += self.cfg.gamma * estimate_next
 
             # compute TD loss between current action value estimate and target. Note that, if
             # execution reaches here, it is guaranteed that at least one batch entry has had a
