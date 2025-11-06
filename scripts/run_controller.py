@@ -83,7 +83,7 @@ class ControllerTrainer(Trainer[ControllerTrainerConfig]):
         default_param = self.controller.default_param(obs)
         param_batched = self.collate_fn([default_param])
         ctx, action = self.controller(obs_batched, param_batched, ctx=state)
-        action = action.cpu().numpy()[0]
+        action = action.numpy(force=True)[0]
         return action, ctx, ctx.log
 
 

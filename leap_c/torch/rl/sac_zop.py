@@ -363,7 +363,6 @@ class SacZopTrainer(Trainer[SacZopTrainerConfig]):
 
         with torch.no_grad():
             pi_output: SacZopActorOutput = self.pi(obs, state, deterministic=deterministic)
-
         action = pi_output.action.numpy(force=True)[0]
 
         return action, pi_output.ctx, pi_output.stats

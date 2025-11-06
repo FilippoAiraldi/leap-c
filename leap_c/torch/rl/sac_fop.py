@@ -513,12 +513,9 @@ class SacFopTrainer(Trainer[SacFopTrainerConfig]):
         self, obs: np.ndarray, deterministic: bool = False, state: Any | None = None
     ) -> tuple[np.ndarray, Any, dict[str, float]]:
         obs = self.buffer.collate([obs])
-
         with torch.no_grad():
             pi_output: SacFopActorOutput = self.pi(obs, state, deterministic)
-
         action = pi_output.action.numpy(force=True)[0]
-
         return action, pi_output.ctx, pi_output.stats
 
     @property

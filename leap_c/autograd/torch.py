@@ -66,7 +66,7 @@ def _to_np(data):
     if isinstance(data, (tuple, list)):
         return tuple(_to_np(item) for item in data)
     try:
-        return data.detach().cpu().numpy()
+        return data.numpy(force=True)
     except AttributeError:
         return data
 
