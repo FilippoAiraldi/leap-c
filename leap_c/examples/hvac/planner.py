@@ -226,8 +226,8 @@ class HvacPlanner(AcadosPlanner[HvacPlannerCtx]):
             quarter_hours=np.array(
                 [
                     np.arange(
-                        quarter_hours[i, 0].cpu().numpy(),
-                        quarter_hours[i, 0].cpu().numpy() + self.cfg.N_horizon + 1,
+                        quarter_hours[i, 0].numpy(force=True),
+                        quarter_hours[i, 0].numpy(force=True) + self.cfg.N_horizon + 1,
                     )
                     % 96  # Wrap around 96 quarter hours per day
                     for i in range(batch_size)
@@ -259,11 +259,7 @@ class HvacPlanner(AcadosPlanner[HvacPlannerCtx]):
                     # Truncate/pad to match horizon + 1 stages
                     n_stages = self.cfg.N_horizon + 1
                     overwrites[key] = (
-                        forecast_data[:, :n_stages]
-                        .reshape(batch_size, -1, 1)
-                        .detach()
-                        .cpu()
-                        .numpy()
+                        forecast_data[:, :n_stages].reshape(batch_size, -1, 1).numpy(force=True)
                     )
                     render_info[key] = overwrites[key]
             else:
@@ -271,7 +267,7 @@ class HvacPlanner(AcadosPlanner[HvacPlannerCtx]):
                 sub_param[key] = self.param_manager.get_labeled_learnable_parameters(
                     param, label=key
                 )
-                render_info[key] = sub_param[key].detach().cpu().numpy()
+                render_info[key] = sub_param[key].numpy(force=True)
 
         p_stagewise = self.param_manager.combine_non_learnable_parameter_values(**overwrites)
 
@@ -287,12 +283,12 @@ class HvacPlanner(AcadosPlanner[HvacPlannerCtx]):
             ctx=ctx,
         )
 
-        render_info["Ti"] = x[:, :, 0].detach().cpu().numpy()  # Indoor temperature trajectory
-        render_info["Th"] = x[:, :, 1].detach().cpu().numpy()  # Radiator temperature trajectory
-        render_info["Te"] = x[:, :, 2].detach().cpu().numpy()  # Envelope temperature trajectory
-        render_info["qh"] = x[:, :, 3].detach().cpu().numpy()  # Heater power trajectory
-        render_info["dqh"] = x[:, :, 4].detach().cpu().numpy()
-        render_info["u_trajectory"] = u.detach().cpu().numpy()  # Full action trajectory
+        render_info["Ti"] = x[:, :, 0].numpy(force=True)  # Indoor temperature trajectory
+        render_info["Th"] = x[:, :, 1].numpy(force=True)  # Radiator temperature trajectory
+        render_info["Te"] = x[:, :, 2].numpy(force=True)  # Envelope temperature trajectory
+        render_info["qh"] = x[:, :, 3].numpy(force=True)  # Heater power trajectory
+        render_info["dqh"] = x[:, :, 4].numpy(force=True)
+        render_info["u_trajectory"] = u.numpy(force=True)  # Full action trajectory
         render_info["ddqh"] = render_info["u_trajectory"]
 
         # TODO: Assuming ref_Ti and log_q_Ti are the only parameters that are learnable
@@ -359,7 +355,7 @@ class HvacPlanner(AcadosPlanner[HvacPlannerCtx]):
         # Convert tensors to numpy if needed
         def to_numpy(x):
             if isinstance(x, torch.Tensor):
-                return x.detach().cpu().numpy()
+                return x.numpy(force=True)
             return x
 
         # Get forecasts from dict observation
