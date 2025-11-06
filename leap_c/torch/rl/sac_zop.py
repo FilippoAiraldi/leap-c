@@ -151,8 +151,8 @@ class SacZopTrainer(Trainer[SacZopTrainerConfig, CtxType], Generic[CtxType]):
                     obs_batched, policy_ctx, deterministic=False
                 )
             assert pi_output.action is not None, "Expected action to be not `None`"
-            action = pi_output.action.cpu().numpy()[0]
-            param = pi_output.param.cpu().numpy()[0]
+            action = pi_output.action.numpy(force=True)[0]
+            param = pi_output.param.numpy(force=True)[0]
 
             self.report_stats("train_trajectory", {"action": action, "param": param}, verbose=True)
             self.report_stats("train_policy_rollout", pi_output.stats, verbose=True)
@@ -242,7 +242,7 @@ class SacZopTrainer(Trainer[SacZopTrainerConfig, CtxType], Generic[CtxType]):
         with torch.inference_mode():
             pi_output: StochasticMPCActorOutput = self.pi(obs, state, deterministic=deterministic)
         assert pi_output.action is not None, "Expected action to be not `None`"
-        action = pi_output.action.cpu().numpy()[0]
+        action = pi_output.action.numpy(force=True)[0]
         return action, pi_output.ctx, pi_output.stats
 
     @property

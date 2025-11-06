@@ -366,7 +366,7 @@ class SacTrainer(Trainer[SacTrainerConfig, Any]):
         obs = self.buffer.collate([obs])
         with torch.inference_mode():
             action, _, stats = self.pi(obs, deterministic=deterministic)
-        return action.cpu().numpy()[0], None, stats
+        return action.numpy(force=True)[0], None, stats
 
     @property
     def optimizers(self) -> list[torch.optim.Optimizer]:

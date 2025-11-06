@@ -151,8 +151,8 @@ class SacFopTrainer(Trainer[SacFopTrainerConfig, CtxType], Generic[CtxType]):
                 pi_output: StochasticMPCActorOutput = self.pi(
                     obs_batched, policy_state, deterministic=False
                 )
-            action = pi_output.action.cpu().numpy()[0]  # type:ignore
-            param = pi_output.param.cpu().numpy()[0]
+            action = pi_output.action.numpy(force=True)[0]
+            param = pi_output.param.numpy(force=True)[0]
 
             self.report_stats("train_trajectory", {"param": param, "action": action}, verbose=True)
             self.report_stats("train_policy_rollout", pi_output.stats, verbose=True)
@@ -272,7 +272,7 @@ class SacFopTrainer(Trainer[SacFopTrainerConfig, CtxType], Generic[CtxType]):
         obs = self.buffer.collate([obs])
         with torch.inference_mode():
             pi_output: StochasticMPCActorOutput = self.pi(obs, state, deterministic)
-        action = pi_output.action.cpu().numpy()[0]
+        action = pi_output.action.numpy(force=True)[0]
         return action, pi_output.ctx, pi_output.stats
 
     @property

@@ -220,13 +220,11 @@ class HvacPlanner(AcadosPlanner[HvacPlannerCtx]):
         # Set time-varying temperature comfort bounds. Reconstruct quarter hours
         # from observation.
         # TODO: Should we pass the quarter hours with an info dict instead?
+        obs0 = obs[:, 0].numpy(force=True)
         lb, ub = set_temperature_limits(
             quarter_hours=np.array(
                 [
-                    np.arange(
-                        obs[i, 0].cpu().numpy(), obs[i, 0].cpu().numpy() + self.cfg.N_horizon + 1
-                    )
-                    % self.cfg.N_horizon
+                    np.arange(obs0[i], obs0[i] + self.cfg.N_horizon + 1) % self.cfg.N_horizon
                     for i in range(batch_size)
                 ]
             )
@@ -269,16 +267,14 @@ class HvacPlanner(AcadosPlanner[HvacPlannerCtx]):
 
             if not self.param_manager.has_learnable_param_pattern(f"{key}*"):
                 # If the forecast parameter is not learned, set it from the observation
-                overwrites[key] = (
-                    obs[:, obs_idx[key]].reshape(batch_size, -1, 1).detach().cpu().numpy()
-                )
+                overwrites[key] = obs[:, obs_idx[key]].reshape(batch_size, -1, 1).numpy(force=True)
                 render_info[key] = overwrites[key]
             else:
                 # If the forecast parameter is learned, extract its structured representation
                 sub_param[key] = self.param_manager.get_labeled_learnable_parameters(
                     param, label=key
                 )
-                render_info[key] = sub_param[key].detach().cpu().numpy()
+                render_info[key] = sub_param[key].numpy(force=True)
 
         p_stagewise = self.param_manager.combine_non_learnable_parameter_values(**overwrites)
 
@@ -290,12 +286,12 @@ class HvacPlanner(AcadosPlanner[HvacPlannerCtx]):
             ctx=ctx,
         )
 
-        render_info["Ti"] = x[:, :, 0].detach().cpu().numpy()  # Indoor temperature trajectory
-        render_info["Th"] = x[:, :, 1].detach().cpu().numpy()  # Radiator temperature trajectory
-        render_info["Te"] = x[:, :, 2].detach().cpu().numpy()  # Envelope temperature trajectory
-        render_info["qh"] = x[:, :, 3].detach().cpu().numpy()  # Heater power trajectory
-        render_info["dqh"] = x[:, :, 4].detach().cpu().numpy()
-        render_info["u_trajectory"] = u.detach().cpu().numpy()  # Full action trajectory
+        render_info["Ti"] = x[:, :, 0].numpy(force=True)  # Indoor temperature trajectory
+        render_info["Th"] = x[:, :, 1].numpy(force=True)  # Radiator temperature trajectory
+        render_info["Te"] = x[:, :, 2].numpy(force=True)  # Envelope temperature trajectory
+        render_info["qh"] = x[:, :, 3].numpy(force=True)  # Heater power trajectory
+        render_info["dqh"] = x[:, :, 4].numpy(force=True)
+        render_info["u_trajectory"] = u.numpy(force=True)  # Full action trajectory
         render_info["ddqh"] = render_info["u_trajectory"]
 
         # TODO: Assuming ref_Ti and q_Ti are the only parameters that are learnable
@@ -341,7 +337,7 @@ class HvacPlanner(AcadosPlanner[HvacPlannerCtx]):
         are supported here.
         """
         if isinstance(obs, torch.Tensor):
-            obs = obs.detach().cpu().numpy()
+            obs = obs.numpy(force=True)
 
         # Handle both single and batched observations uniformly
         # Ensure obs is 2D: (n_batch, obs_dim)
