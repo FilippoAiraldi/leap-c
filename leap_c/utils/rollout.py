@@ -105,7 +105,7 @@ def episode_rollout(
                         policy_stats[key].append(value)
 
                 if isinstance(a, torch.Tensor):
-                    a = a.cpu().numpy()
+                    a = a.numpy(force=True)
 
                 o_prime, reward_val, terminated, truncated, info = env.step(a)
                 step += 1

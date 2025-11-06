@@ -184,7 +184,7 @@ class BaselineTrainer(Trainer[BaselineTrainerConfig, Any]):
             param = self.controller.default_param(obs_batched)
         param_tensor = torch.from_numpy(param).to(self.device)
         ctx, action = self.controller(obs_batched, param_tensor, ctx=state)
-        action = action.cpu().numpy()[0]
+        action = action[0].numpy(force=True)
         return action, ctx, ctx.log
 
 
