@@ -86,7 +86,7 @@ class ControllerTrainer(Trainer[ControllerTrainerConfig, CtxType], Generic[CtxTy
         default_param = self.controller.default_param(obs_batched)
         default_param = torch.from_numpy(default_param).to(self.device)
         ctx, action = self.controller(obs_batched, default_param, ctx=state)
-        action = action.cpu().numpy()[0]
+        action = action.numpy(force=True)[0]
         return action, ctx, ctx.log
 
 
