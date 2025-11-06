@@ -60,7 +60,7 @@ def investigate_single_gradient_entry(diff_mpc, test_inputs, test_func_template)
     granularity = 1e-3
     sample_gradient_hardcoded = 1.8537e-02
 
-    sample = test_inputs.x0[[sample_idx]].detach().cpu().numpy()
+    sample = test_inputs.x0[[sample_idx]].numpy(force=True)
 
     samples = np.tile(sample, (num, 1))
     samples[:, dim_idx] = (

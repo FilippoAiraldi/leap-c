@@ -240,7 +240,7 @@ class CrossQTrainer(Trainer[CrossQTrainerConfig, Any]):
         with torch.inference_mode():
             action, _, stats = self.pi(obs, deterministic=deterministic)
         self.train()
-        return action.cpu().numpy()[0], None, stats
+        return action.numpy(force=True)[0], None, stats
 
     @property
     def optimizers(self) -> list[torch.optim.Optimizer]:

@@ -175,7 +175,7 @@ class ControllerTuner:
 
                 try:
                     ctx, action = self.controller(obs_tensor, param, ctx=ctx)
-                    action = action.cpu().numpy()[0]
+                    action = action.numpy(force=True)[0]
                 except Exception as e:
                     print(f"Controller error: {e}")
                     break

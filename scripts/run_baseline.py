@@ -164,7 +164,7 @@ class BaselineTrainer(Trainer[BaselineTrainerConfig, Any]):
                     else:
                         param = torch.from_numpy(param).to(self.device)
                 policy_ctx, action_tensor = self.controller(obs_batched, param, ctx=policy_ctx)
-                action = action_tensor[0].cpu().numpy()
+                action = action_tensor[0].numpy(force=True)
 
             obs_prime, reward, is_terminated, is_truncated, info = self.train_env.step(action)
 
@@ -196,7 +196,7 @@ class BaselineTrainer(Trainer[BaselineTrainerConfig, Any]):
             else:
                 param = torch.from_numpy(param).to(self.device)
         ctx, action = self.controller(obs_batched, param, ctx=state)
-        action = action.cpu().numpy()[0]
+        action = action[0].numpy(force=True)
         return action, ctx, ctx.log
 
 

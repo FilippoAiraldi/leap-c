@@ -136,7 +136,7 @@ class AcadosDiffMpcTorch(torch.nn.Module):
                 if name in params:
                     val = params[name]
                     if isinstance(val, torch.Tensor):
-                        val = val.detach().cpu().numpy()
+                        val = val.numpy(force=True)
                     non_learnable_overwrites[name] = val
 
         # Build flat p_global differentiably
