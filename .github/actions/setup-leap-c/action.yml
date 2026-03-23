@@ -10,7 +10,7 @@ runs:
   using: 'composite'
   steps:
     - name: Download acados artifacts (build, lib, include) into acados repository
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         path: ${{github.workspace}}/leap_c/external/acados
         repository: acados/acados
@@ -37,12 +37,12 @@ runs:
         echo "LD_LIBRARY_PATH=${{github.workspace}}/leap_c/external/acados/lib" >> $GITHUB_ENV
 
     - name: Set up Python ${{ inputs.python-version }}
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@v6
       with:
         python-version: ${{ inputs.python-version }}
 
     - name: Cache pip dependencies
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-py${{ inputs.python-version }}-pip-${{ hashFiles('**/pyproject.toml') }}
